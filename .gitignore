@@ -1,0 +1,49 @@
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# Obsidian local workspace state
+.obsidian/
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependency folders
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Build and cache output
+dist/
+build/
+.next/
+.turbo/
+.cache/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Private educational inputs and generated exports
+private/
+local-data/
+student-data/
+*.pdf
+*.sqlite
+*.db
+exam.generated.json
+exam.private.json

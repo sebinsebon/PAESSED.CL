@@ -1,0 +1,49 @@
+name: Feature request
+description: Proponer una mejora o nueva funcionalidad.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Que problema concreto resuelve esta propuesta.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propuesta
+      description: Describe la solucion de forma breve.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Inicio
+        - Aprender
+        - Playground
+        - Verificador PAES
+        - PAES Scanner
+        - Sistema adaptativo
+        - Contenido
+        - Infraestructura
+        - Otro
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Fuera de alcance
+      description: Que no deberia incluir esta propuesta.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Revision de datos
+      options:
+        - label: No requiere subir datos personales, secretos ni contenido privado.
+          required: true

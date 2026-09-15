@@ -1,0 +1,35 @@
+name: Content review
+description: Revisar contenido educativo, taxonomia o fuentes.
+title: "[Content]: "
+labels: ["content", "review"]
+body:
+  - type: textarea
+    id: content
+    attributes:
+      label: Contenido o fuente
+      description: Describe el contenido, fuente o cambio de taxonomia.
+    validations:
+      required: true
+  - type: textarea
+    id: license
+    attributes:
+      label: Permiso o licencia
+      description: Explica por que se puede usar o redistribuir.
+    validations:
+      required: true
+  - type: textarea
+    id: educational_fit
+    attributes:
+      label: Encaje educativo
+      description: Que habilidad, tema o flujo apoya.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmacion
+      options:
+        - label: Revise `docs/DATA_AND_CONTENT_POLICY.md`.
+          required: true
+        - label: No contiene datos personales ni material privado.
+          required: true

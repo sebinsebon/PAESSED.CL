@@ -1,0 +1,37 @@
+name: Bug report
+description: Reportar un error o comportamiento inesperado.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Descripcion
+      description: Que ocurrio y que esperabas que ocurriera.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      description: Lista los pasos minimos para ver el problema.
+      placeholder: |
+        1. Ir a...
+        2. Hacer clic en...
+        3. Ver error...
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impacto
+      description: A quien afecta y que tan grave es.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Revision de datos
+      options:
+        - label: No inclui datos personales, secretos ni contenido privado.
+          required: true
