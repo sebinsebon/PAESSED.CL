@@ -137,6 +137,72 @@ class GenericPipelineTests(unittest.TestCase):
         self.assertEqual(candidates[0]["latex"], r"\frac{t}{900}")
         self.assertEqual(candidates[0]["kind"], "fraction")
 
+    def test_fraction_candidate_includes_nearby_operands_outside_rule(self):
+        items = [
+            item("5", 84, 400, 8, 14, 14),
+            item("7", 112, 370, 8, 14, 14),
+        ]
+        objects = [{"type": "PdfObject", "bbox_ll": (100, 385, 108, 386)}]
+        importer.assign_source_ids("p", items, objects)
+
+        candidates = importer.detect_math_candidates(items, objects)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["latex"], r"\frac{5}{7}")
+        self.assertEqual(
+            set(candidates[0]["source_ids"]),
+            {"p:text:0", "p:text:1", "p:object:0"},
+        )
+
+    def test_fraction_candidate_does_not_absorb_distant_text(self):
+        items = [
+            item("5", 84, 400, 8, 14, 14),
+            item("7", 112, 370, 8, 14, 14),
+            item("9", 132, 400, 8, 14, 14),
+        ]
+        objects = [{"type": "PdfObject", "bbox_ll": (100, 385, 108, 386)}]
+        importer.assign_source_ids("p", items, objects)
+
+        candidates = importer.detect_math_candidates(items, objects)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertNotIn("p:text:2", candidates[0]["source_ids"])
+
+    def test_fraction_candidate_does_not_absorb_short_prose_or_adjacent_fraction(self):
+        items = [
+            item("de", 88, 500, 10, 12, 12),
+            item("1", 102, 500, 6, 14, 14),
+            item("2", 102, 470, 6, 14, 14),
+            item("3", 122, 500, 6, 14, 14),
+            item("4", 122, 470, 6, 14, 14),
+        ]
+        objects = [
+            {"type": "PdfObject", "bbox_ll": (100, 485, 108, 486)},
+            {"type": "PdfObject", "bbox_ll": (120, 485, 128, 486)},
+        ]
+        importer.assign_source_ids("p", items, objects)
+
+        candidates = importer.detect_math_candidates(items, objects)
+
+        self.assertEqual([candidate["latex"] for candidate in candidates], [
+            r"\frac{1}{2}", r"\frac{3}{4}"
+        ])
+        self.assertNotIn("p:text:0", candidates[0]["source_ids"])
+
+    def test_fraction_candidate_does_not_absorb_external_exponent(self):
+        items = [
+            item("a", 104, 400, 8, 12, 12),
+            item("b", 104, 370, 8, 12, 12),
+            item("2", 123, 405, 5, 8, 8),
+        ]
+        objects = [{"type": "PdfObject", "bbox_ll": (100, 385, 115, 386)}]
+
+        candidates = importer.detect_math_candidates(items, objects)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["latex"], r"\frac{a}{b}")
+        self.assertNotIn(items[2], candidates[0]["items"])
+
     def test_generic_blocks_do_not_leave_fraction_tokens_as_text(self):
         items = [
             item("La expresión es", 90, 500, 80, 10),
@@ -223,6 +289,31 @@ class GenericPipelineTests(unittest.TestCase):
         self.assertEqual([block["type"] for block in blocks], ["text", "math", "text"])
         self.assertEqual(blocks[1]["latex"], r"\frac{2}{3}")
         self.assertFalse(blocks[1]["display"])
+
+    def test_math_operand_at_text_boundary_is_split_after_operator(self):
+        items = [
+            item("modela mediante p = g", 90, 500, 120, 12),
+            item("·", 212, 500, 6, 14, 14),
+            item("m, tal que g es constante", 220, 500, 130, 12),
+        ]
+
+        expanded = importer.expand_inline_items(items)
+
+        self.assertEqual([part.text for part in expanded], [
+            "modela mediante p = g", "·", "m", ", tal que g es constante"
+        ])
+
+    def test_math_operand_split_does_not_mutilate_hyphenated_prose(self):
+        items = [
+            item("-", 100, 500, 5, 12),
+            item("a, primer caso considerado", 108, 500, 150, 12),
+        ]
+
+        expanded = importer.expand_inline_items(items)
+
+        self.assertEqual([part.text for part in expanded], [
+            "-", "a, primer caso considerado"
+        ])
 
     def test_table_cell_reconstructs_nested_fraction(self):
         items = [

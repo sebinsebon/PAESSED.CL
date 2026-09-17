@@ -203,6 +203,19 @@ def _x_overlap(left, right, padding: float = 2.0) -> bool:
     return left[0] <= right[2] + padding and right[0] <= left[2] + padding
 
 
+def _x_near(left, right, padding: float = 12.0) -> bool:
+    """Allow a math side to extend a short distance beyond its rule."""
+    return _x_overlap(left, right, padding=padding)
+
+
+def _near_fraction_token(item, bar) -> bool:
+    """Keep the relaxed rule window from pulling in short prose words."""
+    bounds = _item_bbox(item)
+    if _x_overlap(bounds, bar, padding=0.0):
+        return True
+    return not re.fullmatch(r"[a-z]{2,}", item.text.strip())
+
+
 def _latex_token(text: str) -> str:
     text = re.sub(r"\s+", "", text.strip())
     return text.replace("·", r"\cdot").replace("−", "-").replace("π", r"\pi").replace("$", r"\$")
@@ -276,6 +289,23 @@ def expand_inline_items(items):
             result.append(_clone_text_item(item, text[:suffix.start()], 0, suffix.start(), 1))
             result.append(_clone_text_item(item, suffix.group(1), suffix.start(), len(text), 2))
             continue
+        previous = expanded[index - 1] if index else None
+        leading = re.match(r"([A-Za-z](?:\d+)?)(?=\s*[,.;:)])", text)
+        previous_text = previous.text.strip() if previous else ""
+        same_line = previous is not None and abs(float(item.y) - float(previous.y)) <= 2.2
+        nearby = previous is not None and float(item.x) - float(previous.x + previous.width) <= 10.0
+        if (
+            leading
+            and same_line
+            and nearby
+            and previous_text.endswith(("+", "-", "−", "*", "/", "·", "="))
+            and not re.search(r"[a-z]{3,}", previous_text)
+            and previous_text not in {"-", "−"}
+        ):
+            cut = leading.end()
+            result.append(_clone_text_item(item, text[:cut], 0, cut, 1))
+            result.append(_clone_text_item(item, text[cut:], cut, len(text), 2))
+            continue
         trailing = re.search(r"(\d+)$", text)
         next_item = expanded[index + 1] if index + 1 < len(expanded) else None
         next_text = next_item.text.strip() if next_item else ""
@@ -299,11 +329,20 @@ def _horizontal_rules(objects: list[dict]) -> list[dict]:
     ]
 
 
-def _nearest_math_line(items, bar, above: bool) -> list:
+def _nearest_math_line(items, bar, above: bool, bars=()) -> list:
     candidates = []
     for item in items:
         bounds = _item_bbox(item)
-        if not _x_overlap(bounds, bar):
+        if not _x_near(bounds, bar):
+            continue
+        if not _near_fraction_token(item, bar):
+            continue
+        if any(
+            other != bar
+            and _x_overlap(bounds, other)
+            and abs(bar[1] - other[1]) <= 12.0
+            for other in bars
+        ):
             continue
         if above and bounds[1] >= bar[3] - 2.0:
             candidates.append(item)
@@ -410,10 +449,16 @@ def detect_math_candidates(items, objects, owner: str | None = None) -> list[dic
     for rule in _horizontal_rules(objects):
         bar = tuple(rule["bbox_ll"])
         above = _expand_math_line(
-            items, bar, _nearest_math_line(items, bar, above=True), above=True
+            items, bar, _nearest_math_line(
+                items, bar, above=True,
+                bars=[tuple(other["bbox_ll"]) for other in _horizontal_rules(objects)],
+            ), above=True
         )
         below = _expand_math_line(
-            items, bar, _nearest_math_line(items, bar, above=False), above=False
+            items, bar, _nearest_math_line(
+                items, bar, above=False,
+                bars=[tuple(other["bbox_ll"]) for other in _horizontal_rules(objects)],
+            ), above=False
         )
         if above and below and not any(
             item.text.strip() in {"√", "sqrt"}
