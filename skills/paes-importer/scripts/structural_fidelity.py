@@ -174,10 +174,13 @@ def fidelity_report(blocks):
             if proof.get("representation_type", b.get("type")) != b.get("type"):
                 failures.append({"source_ids": b.get("source_ids", []), "reasons":["changed_representation_type"]})
             owner = b.get("owner")
-            key = (-proof["baseline"], proof["bbox_ll"][0])
-            if owner in previous and key < previous[owner]:
-                failures.append({"source_ids": b.get("source_ids", []), "reasons":["reading_order_violation"]})
-            previous[owner] = key
+            if proof.get("baseline") is None or not proof.get("bbox_ll"):
+                failures.append({"source_ids": b.get("source_ids", []), "reasons":["missing_source_geometry"]})
+            else:
+                key = (-proof["baseline"], proof["bbox_ll"][0])
+                if owner in previous and key < previous[owner]:
+                    failures.append({"source_ids": b.get("source_ids", []), "reasons":["reading_order_violation"]})
+                previous[owner] = key
         if b.get("type")=="table":
             for row in b.get("rows",[]):
                 for cell in row.get("cells",[]):

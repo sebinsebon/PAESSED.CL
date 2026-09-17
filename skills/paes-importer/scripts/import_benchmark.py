@@ -1881,10 +1881,6 @@ def main() -> None:
                                     mark_candidates(child)
                 for block in flat_blocks:
                     mark_candidates(block)
-                add_ai_evidence_crops(
-                    page, crop_dir, case["id"], flat_blocks, source_inventory,
-                    evidence, evidence_id, region_id, page_width, page_height,
-                )
                 coverage = assess_source_coverage(
                     source_inventory,
                     flat_blocks,
@@ -1899,6 +1895,15 @@ def main() -> None:
                                 "type": "unresolved",
                                 "reason": "source_object_unrepresented",
                                 "evidence_id": evidence_id,
+                                "structural_fidelity": {
+                                    "status": "unresolved",
+                                    "reasons": ["source_object_unrepresented"],
+                                    "bbox_ll": list(entry["bbox"]),
+                                    "baseline": (entry["bbox"][1] + entry["bbox"][3]) / 2,
+                                    "source_ids": [entry["id"]],
+                                    "representation_type": "unresolved",
+                                    "method": "source_inventory_geometry_v1",
+                                },
                             },
                             [entry["id"]],
                             entry["owner"],
@@ -1951,6 +1956,12 @@ def main() -> None:
                         "message": "A source object was consumed more than once.",
                     })
 
+                # Coverage can create additional unresolved source candidates.
+                # Render their minimum crops too, after that inventory is final.
+                add_ai_evidence_crops(
+                    page, crop_dir, case["id"], flat_blocks, source_inventory,
+                    evidence, evidence_id, region_id, page_width, page_height,
+                )
                 structural = fidelity_report(flat_blocks)
                 if not structural["complete"]:
                     issues.append({

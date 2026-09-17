@@ -18,6 +18,72 @@ from jsonschema import Draft202012Validator
 
 
 AI_RESPONSE_SCHEMA = {
+    "$defs": {
+        "table_rows": {
+            "type": "array",
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["cells"],
+                "properties": {
+                    "cells": {
+                        "type": "array",
+                        "items": {
+                            "type": "object", "additionalProperties": False,
+                            "required": ["blocks"],
+                            "properties": {
+                                "blocks": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/$defs/block"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "block": {
+            "oneOf": [
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["type", "text"],
+                    "properties": {"type": {"const": "text"}, "text": {"type": "string"}},
+                },
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["type", "latex", "display"],
+                    "properties": {
+                        "type": {"const": "math"},
+                        "latex": {"type": "string", "minLength": 1},
+                        "display": {"type": "boolean"},
+                    },
+                },
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["type", "asset_id"],
+                    "properties": {
+                        "type": {"const": "image"},
+                        "asset_id": {"type": "string", "minLength": 1},
+                    },
+                },
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["type", "reason"],
+                    "properties": {
+                        "type": {"const": "unresolved"},
+                        "reason": {"type": "string", "minLength": 1},
+                    },
+                },
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["type", "rows"],
+                    "properties": {
+                        "type": {"const": "table"},
+                        "rows": {"$ref": "#/$defs/table_rows"},
+                    },
+                },
+            ],
+        },
+    },
     "type": "object", "additionalProperties": False,
     "required": ["schema_version", "candidate_id", "action", "agent", "result"],
     "properties": {
@@ -60,7 +126,7 @@ AI_RESPONSE_SCHEMA = {
                     "required": ["type", "rows", "source_ids", "owner"],
                     "properties": {
                         "type": {"const": "table"},
-                        "rows": {"type": "array"},
+                        "rows": {"$ref": "#/$defs/table_rows"},
                         "source_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
                         "owner": {"type": "string", "minLength": 1},
                     },
@@ -104,9 +170,9 @@ def validate_ai_response(response: dict, candidate: dict) -> dict:
 
 
 def build_ai_request(candidate: dict, evidence: list[dict]) -> dict:
-    evidence_id = candidate.get("ai_evidence_id") or candidate.get("evidence_id")
+    evidence_id = candidate.get("ai_evidence_id")
     selected = next((entry for entry in evidence if entry.get("id") == evidence_id), None)
-    if not selected:
+    if not evidence_id or not selected:
         raise ValueError("No minimum evidence crop is registered for candidate")
     kind = candidate.get("candidate_type", "visual")
     if kind == "math":
@@ -187,6 +253,55 @@ def recalculate_draft(draft: dict, question) -> dict:
     structural = fidelity_report(blocks)
     question["coverage"] = coverage
     question["structural_fidelity"] = structural
+    generated_codes = {
+        "AMBIGUOUS_ASSOCIATION", "PENDING_MATH_RECONSTRUCTION",
+        "PENDING_VISUAL_RECONSTRUCTION", "STRUCTURAL_COVERAGE_GAP",
+        "OWNER_MISMATCH", "DUPLICATE_SOURCE_CONSUMPTION",
+        "STRUCTURAL_FIDELITY_UNPROVEN",
+    }
+    issues = draft.setdefault("issues", [])
+    issues[:] = [
+        issue for issue in issues
+        if not (issue.get("target_id") == question["id"] and issue.get("code") in generated_codes)
+    ]
+
+    def add_issue(code, suffix, message, **extra):
+        issue = {
+            "id": f"issue-{question['id']}-{suffix}",
+            "code": code,
+            "severity": "warning",
+            "target_id": question["id"],
+            "region_ids": list(question.get("region_ids", [])),
+            "blocks_completion": True,
+            "message": message,
+        }
+        issue.update(extra)
+        issues.append(issue)
+
+    unresolved = [block for block in iter_blocks(blocks) if block.get("type") == "unresolved"]
+    if unresolved:
+        if any(block.get("reason") == "ambiguous_association" for block in unresolved):
+            code = "AMBIGUOUS_ASSOCIATION"
+        elif any(block.get("candidate_type") == "math" for block in unresolved):
+            code = "PENDING_MATH_RECONSTRUCTION"
+        else:
+            code = "PENDING_VISUAL_RECONSTRUCTION"
+        add_issue(code, "coverage", "A detected content candidate remains unresolved.")
+    if coverage.get("uncovered"):
+        add_issue(
+            "STRUCTURAL_COVERAGE_GAP", "coverage-gap",
+            "Relevant source objects remain unresolved.", evidence_ids=[],
+        )
+    if coverage.get("misowned"):
+        add_issue("OWNER_MISMATCH", "owner", "A source object is consumed by the wrong structural owner.")
+    if coverage.get("duplicated"):
+        add_issue("DUPLICATE_SOURCE_CONSUMPTION", "duplicate-source", "A source object was consumed more than once.")
+    if not structural["complete"]:
+        add_issue(
+            "STRUCTURAL_FIDELITY_UNPROVEN", "fidelity",
+            "Source coverage does not prove expression type, grouping or reading order.",
+            failures=copy.deepcopy(structural["failures"]),
+        )
     question["extraction_status"] = determine_extraction_status(
         question["id"], draft.get("issues", []), question.get("stem", []), question.get("options", []), coverage
     )
@@ -218,27 +333,35 @@ def apply_ai_response(draft: dict, response: dict) -> dict:
     result["structural_fidelity"] = proof
     if response["action"] == "retain_unresolved":
         result = copy.deepcopy(candidate)
-        result["ai_on_demand"] = {"status": "retained", "task": "manual_review_or_retry"}
-    blocks = question.get("stem", [])
-    blocks.extend(block for option in question.get("options", []) for block in option.get("blocks", []))
-    if not _replace_candidate(blocks, candidate["candidate_id"], result):
+        result["ai_on_demand"] = {
+            "status": "retained", "task": "manual_review_or_retry",
+            "reason": response["result"]["reason"],
+        }
+    containers = [question.get("stem", [])] + [
+        option.get("blocks", []) for option in question.get("options", [])
+    ]
+    if not any(_replace_candidate(blocks, candidate["candidate_id"], result) for blocks in containers):
         raise ValueError("Unable to replace candidate in its owner")
     issues = draft.setdefault("issues", [])
-    issues[:] = [
-        issue for issue in issues
-        if not (issue.get("target_id") == question["id"] and issue.get("code") in {
-            "PENDING_MATH_RECONSTRUCTION", "PENDING_VISUAL_RECONSTRUCTION", "STRUCTURAL_FIDELITY_UNPROVEN"
-        })
-    ]
+    issue_id = "issue-ai-" + candidate["candidate_id"]
+    issues[:] = [issue for issue in issues if issue.get("id") != issue_id]
     issues.append({
-        "id": "issue-ai-" + candidate["candidate_id"],
-        "code": "AI_RESPONSE_REVALIDATION_PENDING",
+        "id": issue_id,
+        "code": (
+            "AI_RESPONSE_REVALIDATION_PENDING"
+            if response["action"] == "replace"
+            else "AI_RESPONSE_RETAINED_UNRESOLVED"
+        ),
         "severity": "warning",
         "target_id": question["id"],
         "region_ids": list(question.get("region_ids", [])),
         "evidence_ids": [value for value in [candidate.get("ai_evidence_id"), candidate.get("evidence_id")] if value],
         "blocks_completion": True,
-        "message": "AI output was applied but requires deterministic fidelity and human review.",
+        "message": (
+            "AI output was applied but requires deterministic fidelity and human review."
+            if response["action"] == "replace"
+            else "AI output was retained as unresolved and requires manual review or retry."
+        ),
     })
     intervention_id = "ai-" + hashlib.sha256(json.dumps(response, sort_keys=True).encode()).hexdigest()[:16]
     draft.setdefault("extraction", {}).setdefault("ai_interventions", []).append({
@@ -253,6 +376,7 @@ def apply_ai_response(draft: dict, response: dict) -> dict:
         "action": response["action"],
         "result_type": result.get("type"),
         "validation": "schema_source_owner_revalidated",
+        "response": copy.deepcopy(response),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     recalculate_draft(draft, question)
@@ -278,10 +402,12 @@ def main():
         if not candidate:
             raise SystemExit("Candidate not found")
         request = build_ai_request(candidate, draft.get("evidence", []))
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         response = json.loads(args.response.read_text(encoding="utf-8"))
         updated = apply_ai_response(draft, response)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(updated, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

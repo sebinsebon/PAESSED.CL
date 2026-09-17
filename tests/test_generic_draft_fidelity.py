@@ -149,12 +149,17 @@ class GenericDraftFidelityTests(unittest.TestCase):
             q = self.questions.get(question_id)
             if q is None:
                 continue
-            candidates = [b for b in q["stem"] if b["type"]=="unresolved" and b.get("candidate_id")]
+            candidates = [b for b in q["stem"] + [b for o in q["options"] for b in o["blocks"]]
+                          if b["type"]=="unresolved" and b.get("candidate_id")]
             self.assertTrue(candidates, question_id)
             for candidate in candidates:
                 request = build_ai_request(candidate, self.evidence_by_question[question_id])
                 self.assertEqual(request["candidate_id"], candidate["candidate_id"])
                 self.assertNotIn("question_text", request)
+                evidence = next(e for e in self.evidence_by_question[question_id]
+                                if e['id'] == request['evidence']['id'])
+                self.assertEqual(evidence.get('reason'), 'ai_on_demand')
+                self.assertEqual(evidence.get('candidate_id'), candidate['candidate_id'])
 
 if __name__=="__main__":
     unittest.main()

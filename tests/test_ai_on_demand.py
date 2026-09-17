@@ -13,6 +13,38 @@ from import_benchmark import detect_math_candidates, expand_inline_items
 
 
 class AiOnDemandTests(unittest.TestCase):
+    def _draft_and_response_for_apply(self):
+        unresolved = {
+            "type": "unresolved", "reason": "structural_fidelity_unproven",
+            "candidate_id": "math-ab12", "candidate_type": "math",
+            "owner": "stem", "source_ids": ["p:text:1"],
+            "structural_fidelity": {
+                "status": "unresolved", "reasons": ["ambiguous"],
+                "source_ids": ["p:text:1"], "representation_type": "unresolved",
+                "bbox_ll": [10, 20, 40, 50], "baseline": 20,
+            },
+        }
+        draft = {
+            "source_objects": [{
+                "id": "p:text:1", "region_id": "region-q", "owner": "stem",
+                "kind": "text", "candidate_type": "math", "bbox": [10, 20, 40, 50],
+            }],
+            "questions": [{
+                "id": "q", "region_ids": ["region-q"], "stem": [unresolved],
+                "options": [], "extraction_status": "partial",
+            }],
+            "issues": [], "extraction": {"ai_interventions": []},
+        }
+        response = {
+            "schema_version": "1.0", "candidate_id": "math-ab12", "action": "replace",
+            "agent": {"cli": "host-cli", "model": "host-model"},
+            "result": {
+                "type": "math", "latex": "1+1", "display": False,
+                "source_ids": ["p:text:1"], "owner": "stem",
+            },
+        }
+        return draft, response
+
     def test_simple_arithmetic_tokens_reconstruct_without_solving(self):
         items = [
             SimpleNamespace(text="-", x=0, y=10, width=5, height=12, font_size=12),
@@ -79,40 +111,21 @@ class AiOnDemandTests(unittest.TestCase):
             validate_ai_response(response, {"candidate_id": "math-ab12", "source_ids": ["p:text:1"], "owner": "stem"})
 
     def test_apply_replaces_candidate_registers_intervention_and_revalidates(self):
-        unresolved = {
-            "type": "unresolved", "reason": "structural_fidelity_unproven",
-            "candidate_id": "math-ab12", "candidate_type": "math",
-            "owner": "stem", "source_ids": ["p:text:1"],
-            "structural_fidelity": {
-                "status": "unresolved", "reasons": ["ambiguous"],
-                "source_ids": ["p:text:1"], "representation_type": "unresolved",
-                "bbox_ll": [10, 20, 40, 50], "baseline": 20,
-            },
-        }
-        draft = {
-            "source_objects": [{
-                "id": "p:text:1", "region_id": "region-q", "owner": "stem",
-                "kind": "text", "candidate_type": "math", "bbox": [10, 20, 40, 50],
-            }],
-            "questions": [{
-                "id": "q", "region_ids": ["region-q"], "stem": [unresolved],
-                "options": [], "extraction_status": "partial",
-            }],
-            "issues": [], "extraction": {"ai_interventions": []},
-        }
-        response = {
-            "schema_version": "1.0", "candidate_id": "math-ab12", "action": "replace",
-            "agent": {"cli": "host-cli", "model": "host-model"},
-            "result": {
-                "type": "math", "latex": "1+1", "display": False,
-                "source_ids": ["p:text:1"], "owner": "stem",
-            },
-        }
+        draft, response = self._draft_and_response_for_apply()
         updated = apply_ai_response(copy.deepcopy(draft), response)
         self.assertEqual(updated["questions"][0]["stem"][0]["type"], "math")
         self.assertEqual(len(updated["extraction"]["ai_interventions"]), 1)
         self.assertEqual(updated["questions"][0]["extraction_status"], "partial")
         self.assertIn("ai_response_requires_revalidation", updated["questions"][0]["stem"][0]["structural_fidelity"]["reasons"])
+
+    def test_generated_issue_for_ambiguous_candidate_is_reconciled_after_replace(self):
+        draft, response = self._draft_and_response_for_apply()
+        draft["issues"] = [{
+            "id": "issue-q-coverage", "code": "AMBIGUOUS_ASSOCIATION",
+            "target_id": "q", "blocks_completion": True,
+        }]
+        updated = apply_ai_response(copy.deepcopy(draft), response)
+        self.assertFalse(any(i["code"] == "AMBIGUOUS_ASSOCIATION" for i in updated["issues"]))
 
 
 if __name__ == "__main__":

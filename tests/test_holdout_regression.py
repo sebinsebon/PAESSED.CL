@@ -77,6 +77,14 @@ class HoldoutRegressionTests(unittest.TestCase):
         self.assertIn("2027-p36:object:12", pending["source_ids"])
         self.assertTrue(any(block.get("type") == "image" for block in blocks))
 
+    def test_coverage_created_candidates_keep_geometry(self):
+        for question_id in ("2026-q35", "2027-q45"):
+            for block in self.blocks(question_id):
+                if block.get("reason") == "source_object_unrepresented":
+                    proof = block.get("structural_fidelity", {})
+                    self.assertIsNotNone(proof.get("baseline"))
+                    self.assertTrue(proof.get("bbox_ll"))
+
 
 if __name__ == "__main__":
     unittest.main()

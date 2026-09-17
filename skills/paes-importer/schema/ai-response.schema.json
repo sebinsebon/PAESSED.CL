@@ -1,6 +1,75 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "PAESSED Etapa 1 AI-on-demand response",
+  "$defs": {
+    "table_rows": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["cells"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["blocks"],
+              "properties": {
+                "blocks": {
+                  "type": "array",
+                  "items": {"$ref": "#/$defs/block"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "block": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "type": {"const": "text"},
+            "text": {"type": "string"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "latex", "display"],
+          "properties": {
+            "type": {"const": "math"},
+            "latex": {"type": "string", "minLength": 1},
+            "display": {"type": "boolean"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "asset_id"],
+          "properties": {
+            "type": {"const": "image"},
+            "asset_id": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reason"],
+          "properties": {
+            "type": {"const": "unresolved"},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "rows"],
+          "properties": {
+            "type": {"const": "table"},
+            "rows": {"$ref": "#/$defs/table_rows"}
+          }
+        }
+      ]
+    }
+  },
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "candidate_id", "action", "agent", "result"],
@@ -44,7 +113,7 @@
           "required": ["type", "rows", "source_ids", "owner"],
           "properties": {
             "type": {"const": "table"},
-            "rows": {"type": "array"},
+            "rows": {"$ref": "#/$defs/table_rows"},
             "source_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
             "owner": {"type": "string", "minLength": 1}
           }
