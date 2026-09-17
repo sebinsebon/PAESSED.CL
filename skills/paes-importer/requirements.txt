@@ -1,0 +1,4 @@
+pdf-inspector==1.20.0
+pypdfium2==5.13.0
+Pillow==12.3.0
+jsonschema==4.26.0

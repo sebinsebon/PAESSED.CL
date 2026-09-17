@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "document",
+    "extraction",
+    "pages",
+    "regions",
+    "assets",
+    "source_objects",
+    "evidence",
+    "contexts",
+    "questions",
+    "unassigned_fragments",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "document": {
+      "type": "object",
+      "required": [
+        "source_path",
+        "sha256",
+        "page_count"
+      ]
+    },
+    "extraction": {
+      "type": "object",
+      "required": [
+        "status",
+        "tools",
+        "ai_interventions",
+        "verification_status"
+      ]
+    },
+    "pages": {
+      "type": "array"
+    },
+    "regions": {
+      "type": "array"
+    },
+    "assets": {
+      "type": "array"
+    },
+    "evidence": {
+      "type": "array"
+    },
+    "contexts": {
+      "type": "array"
+    },
+    "questions": {
+      "type": "array"
+    },
+    "unassigned_fragments": {
+      "type": "array"
+    },
+    "issues": {
+      "type": "array"
+    },
+    "source_objects": {
+      "type": "array"
+    }
+  }
+}

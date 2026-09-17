@@ -1,0 +1,69 @@
+{
+  "kind": "holdout_benchmark_selection",
+  "created": "2026-09-16",
+  "selection_policy": {
+    "count": 8,
+    "per_pdf": 4,
+    "exclude_development_cases": [
+      "2026-q1",
+      "2026-q2",
+      "2026-q3",
+      "2026-q4",
+      "2027-q5",
+      "2027-q9",
+      "2027-q16",
+      "2027-q38"
+    ],
+    "rationale": "New questions distributed across early, middle and late pages of both PDFs; no development case reused."
+  },
+  "cases": [
+    {
+      "id": "2026-q10",
+      "year": 2026,
+      "question": "10",
+      "page": 11
+    },
+    {
+      "id": "2026-q20",
+      "year": 2026,
+      "question": "20",
+      "page": 17
+    },
+    {
+      "id": "2026-q35",
+      "year": 2026,
+      "question": "35",
+      "page": 27
+    },
+    {
+      "id": "2026-q55",
+      "year": 2026,
+      "question": "55",
+      "page": 45
+    },
+    {
+      "id": "2027-q12",
+      "year": 2027,
+      "question": "12",
+      "page": 12
+    },
+    {
+      "id": "2027-q25",
+      "year": 2027,
+      "question": "25",
+      "page": 21
+    },
+    {
+      "id": "2027-q45",
+      "year": 2027,
+      "question": "45",
+      "page": 36
+    },
+    {
+      "id": "2027-q60",
+      "year": 2027,
+      "question": "60",
+      "page": 50
+    }
+  ]
+}

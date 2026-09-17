@@ -1,0 +1,8 @@
+{
+  "cases": [
+    {"id": "2026-q1", "year": 2026, "question": "1", "page": 3},
+    {"id": "2026-q2", "year": 2026, "question": "2", "page": 3},
+    {"id": "2026-q3", "year": 2026, "question": "3", "page": 4},
+    {"id": "2026-q4", "year": 2026, "question": "4", "page": 5}
+  ]
+}

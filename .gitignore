@@ -47,3 +47,7 @@ student-data/
 *.db
 exam.generated.json
 exam.private.json
+
+skills/paes-importer/benchmark/run/
+.paes-importer-venv/
+skills/paes-importer/benchmark/run-*/
