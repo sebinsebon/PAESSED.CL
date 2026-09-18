@@ -404,6 +404,69 @@ def _math_side_latex(items) -> str:
     return result
 
 
+def _multiline_math_members(items, used_items) -> list:
+    """Find a conservative continuation made of adjacent math-only lines."""
+    def is_math_token(item) -> bool:
+        text = item.text.strip()
+        words = re.findall(r"[A-Za-z]+", text)
+        if any(len(word) > 1 for word in words) and re.search(r"\s", text):
+            return False
+        return (
+            _is_mathish(text)
+            and all(len(word) == 1 or word.isupper() for word in words)
+        )
+
+    def is_math_line(line) -> bool:
+        text = line["text"].strip()
+        words = re.findall(r"[A-Za-z]+", text)
+        return not (
+            re.search(r"\s", text)
+            and any(len(word) > 1 for word in words)
+        )
+
+    remaining = [item for item in items if id(item) not in used_items]
+    lines = make_lines(remaining)
+    for start in range(len(lines) - 1):
+        group = [lines[start]]
+        for line in lines[start + 1:]:
+            previous = group[-1]
+            if abs(float(previous["y"]) - float(line["y"])) > 24.0:
+                break
+            if not is_math_line(previous) or not is_math_line(line):
+                break
+            if not all(
+                is_math_token(item)
+                for item in [*previous["items"], *line["items"]]
+            ):
+                break
+            previous_text = previous["text"].replace(" ", "")
+            current_text = line["text"].lstrip()
+            current_operator = re.match(r"^[+\u2212\-*/\u00b7=]", current_text)
+            previous_ends_operator = bool(
+                re.search(r"[+\u2212\-*/\u00b7=]$", previous_text)
+            )
+            if current_operator and current_operator.group(0) in {"-", "\u2212"} and not previous_ends_operator:
+                break
+            connected = bool(
+                previous_ends_operator
+                or current_operator
+            )
+            if not connected:
+                break
+            previous_box = _bbox_union([_item_bbox(item) for item in previous["items"]])
+            current_box = _bbox_union([_item_bbox(item) for item in line["items"]])
+            if previous_box[2] < current_box[0] - 8.0 or current_box[2] < previous_box[0] - 8.0:
+                break
+            group.append(line)
+        if len(group) >= 2 and any("=" in candidate["text"] for candidate in group):
+            return [
+                item
+                for candidate in group
+                for item in sorted(candidate["items"], key=lambda value: float(value.x))
+            ]
+    return []
+
+
 def infer_math_display(members, all_items) -> bool:
     """A formula is inline when neighboring non-members share its text line."""
     bounds = _bbox_union([_item_bbox(item) for item in members])
@@ -492,6 +555,17 @@ def detect_math_candidates(items, objects, owner: str | None = None) -> list[dic
                 rf"\sqrt{{{_math_side_latex(below)}}}",
                 _bbox_union([bar, *(_item_bbox(item) for item in [root, *below])]),
             )
+
+    multiline_members = _multiline_math_members(items, used_items)
+    if multiline_members:
+        add_candidate(
+            "multiline",
+            multiline_members,
+            [],
+            None,
+            _bbox_union([_item_bbox(item) for item in multiline_members]),
+            display=False,
+        )
 
     ordered = sorted(items, key=lambda item: (float(item.x), -float(item.y)))
     for base in ordered:
@@ -1290,6 +1364,7 @@ def reconstruct_generic_blocks(
                 "type": "unresolved",
                 "reason": "math_reconstruction_pending",
                 "evidence_id": evidence_id,
+                "candidate_type": "math",
             }
         )
         units.append((

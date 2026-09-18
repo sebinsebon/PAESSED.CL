@@ -1,7 +1,9 @@
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "paes-importer" / "scripts"))
 import import_benchmark as importer
@@ -314,6 +316,203 @@ class GenericPipelineTests(unittest.TestCase):
         self.assertEqual([part.text for part in expanded], [
             "-", "a, primer caso considerado"
         ])
+
+    def test_multiline_fraction_requires_a_demonstrable_vertical_relation(self):
+        items = [
+            item("a", 100, 500, 8, 14, 14),
+            item("b", 100, 380, 8, 14, 14),
+        ]
+        objects = [{"type": "PdfObject", "bbox_ll": (99, 465, 110, 466)}]
+        importer.assign_source_ids("p", items, objects)
+
+        candidates = importer.detect_math_candidates(items, objects)
+
+        self.assertEqual(candidates, [])
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", items, objects
+        )
+        blocks = importer.reconstruct_generic_blocks(
+            items, objects, "evidence-q", {}, owner="stem"
+        )
+        coverage = importer.assess_source_coverage(inventory, blocks)
+        self.assertIn("p:object:0", coverage["uncovered"])
+        self.assertEqual(
+            importer.determine_extraction_status("q", [], blocks, [], coverage),
+            "partial",
+        )
+
+    def test_multiline_math_keeps_owner_and_source_ids_per_line(self):
+        items = [
+            item("x", 100, 500, 8, 14, 14),
+            item("+", 112, 500, 8, 14, 14),
+            item("1", 124, 500, 8, 14, 14),
+            item("y", 100, 470, 8, 14, 14),
+            item("+", 112, 470, 8, 14, 14),
+            item("2", 124, 470, 8, 14, 14),
+        ]
+        importer.assign_source_ids("p", items, [])
+
+        blocks = importer.reconstruct_generic_blocks(
+            items, [], "evidence-q", {}, owner="option:A"
+        )
+
+        math_blocks = [block for block in blocks if block["type"] == "math"]
+        self.assertEqual([block["latex"] for block in math_blocks], ["x+1", "y+2"])
+        self.assertTrue(all(block["owner"] == "option:A" for block in math_blocks))
+        self.assertEqual(
+            {source_id for block in math_blocks for source_id in block["source_ids"]},
+            {f"p:text:{index}" for index in range(6)},
+        )
+
+    def test_ambiguous_multiline_candidate_remains_partial(self):
+        blocks = [{
+            "type": "unresolved",
+            "reason": "structural_fidelity_unproven",
+            "candidate_type": "math",
+            "candidate_id": "math-multiline",
+            "continuation_candidate": True,
+            "source_ids": ["p:text:0", "p:text:1"],
+        }]
+
+        self.assertEqual(
+            importer.determine_extraction_status(
+                "q", [], blocks, [], {"complete": True}
+            ),
+            "partial",
+        )
+
+    def test_multiline_candidate_crop_covers_all_source_lines(self):
+        with tempfile.TemporaryDirectory(prefix="paes-multiline-crop-") as tmp:
+            crop_dir = Path(tmp) / "evidence" / "crops"
+            crop_dir.mkdir(parents=True)
+            rendered = crop_dir / "q-candidate-math-multiline.png"
+
+            def fake_render_slice(*args):
+                rendered.write_bytes(b"png")
+                return rendered
+
+            block = {
+                "type": "unresolved",
+                "candidate_id": "math-multiline",
+                "source_ids": ["p:text:0", "p:text:1"],
+            }
+            inventory = [
+                {"id": "p:text:0", "bbox": [100, 400, 110, 412]},
+                {"id": "p:text:1", "bbox": [100, 380, 110, 392]},
+            ]
+            evidence = []
+
+            with patch.object(importer, "render_slice", side_effect=fake_render_slice):
+                importer.add_ai_evidence_crops(
+                    object(), crop_dir, "q", [block], inventory, evidence,
+                    "evidence-q", "region-q", 500, 700,
+                )
+
+            self.assertEqual(evidence[0]["bbox"], [97.0, 285.0, 113.0, 323.0])
+            self.assertEqual(evidence[0]["source_ids"], block["source_ids"])
+            self.assertNotEqual(evidence[0]["id"], "evidence-q")
+
+    def test_multiline_expression_becomes_one_unresolved_candidate_with_full_crop(self):
+        items = [
+            item("2x +", 100, 500, 40, 14, 14),
+            item("1 = 7", 100, 480, 40, 14, 14),
+        ]
+        importer.assign_source_ids("p", items, [])
+
+        blocks = importer.reconstruct_generic_blocks(
+            items, [], "evidence-q", {}, owner="stem"
+        )
+        unresolved = [block for block in blocks if block["type"] == "unresolved"]
+
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(unresolved[0]["reason"], "math_reconstruction_pending")
+        self.assertEqual(unresolved[0]["candidate_type"], "math")
+        self.assertEqual(
+            unresolved[0]["source_ids"], ["p:text:0", "p:text:1"]
+        )
+
+        with tempfile.TemporaryDirectory(prefix="paes-multiline-positive-") as tmp:
+            crop_dir = Path(tmp) / "evidence" / "crops"
+            crop_dir.mkdir(parents=True)
+            rendered = crop_dir / "q-candidate-multiline.png"
+
+            def fake_render_slice(*args):
+                rendered.write_bytes(b"png")
+                return rendered
+
+            evidence = []
+            inventory = importer.build_source_inventory(
+                "p", "region-q", "stem", items, []
+            )
+            with patch.object(importer, "render_slice", side_effect=fake_render_slice):
+                importer.add_ai_evidence_crops(
+                    object(), crop_dir, "q", unresolved, inventory, evidence,
+                    "evidence-q", "region-q", 500, 700,
+                )
+
+            self.assertEqual(evidence[0]["bbox"], [97.0, 183.0, 143.0, 223.0])
+            self.assertEqual(evidence[0]["source_ids"], ["p:text:0", "p:text:1"])
+
+    def test_multiline_detector_does_not_group_prose_with_math(self):
+        items = [
+            item("de x +", 100, 500, 50, 14, 14),
+            item("1 = 7", 100, 480, 40, 14, 14),
+        ]
+
+        candidates = importer.detect_math_candidates(items, [])
+
+        self.assertFalse(any(candidate["kind"] == "multiline" for candidate in candidates))
+
+    def test_multiline_detector_rejects_independent_unary_minus_equations(self):
+        items = [
+            item("x = 5", 100, 500, 40, 14, 14),
+            item("-2y = 8", 100, 480, 50, 14, 14),
+        ]
+
+        candidates = importer.detect_math_candidates(items, [])
+
+        self.assertFalse(any(candidate["kind"] == "multiline" for candidate in candidates))
+
+    def test_multiline_expression_keeps_lines_after_first_equality(self):
+        items = [
+            item("2x +", 100, 500, 40, 14, 14),
+            item("3y =", 100, 480, 40, 14, 14),
+            item("12", 100, 460, 20, 14, 14),
+        ]
+        importer.assign_source_ids("p", items, [])
+
+        blocks = importer.reconstruct_generic_blocks(
+            items, [], "evidence-q", {}, owner="stem"
+        )
+        unresolved = [block for block in blocks if block["type"] == "unresolved"]
+
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(
+            unresolved[0]["source_ids"],
+            ["p:text:0", "p:text:1", "p:text:2"],
+        )
+
+    def test_multiline_detector_rejects_uppercase_prose_phrase(self):
+        items = [
+            item("SI x +", 100, 500, 45, 14, 14),
+            item("1 = 7", 100, 480, 40, 14, 14),
+        ]
+
+        candidates = importer.detect_math_candidates(items, [])
+
+        self.assertFalse(any(candidate["kind"] == "multiline" for candidate in candidates))
+
+    def test_multiline_detector_rejects_separate_uppercase_prose_tokens(self):
+        items = [
+            item("SI", 100, 500, 14, 14, 14),
+            item("x", 118, 500, 8, 14, 14),
+            item("+", 130, 500, 8, 14, 14),
+            item("1 = 7", 100, 480, 40, 14, 14),
+        ]
+
+        candidates = importer.detect_math_candidates(items, [])
+
+        self.assertFalse(any(candidate["kind"] == "multiline" for candidate in candidates))
 
     def test_table_cell_reconstructs_nested_fraction(self):
         items = [
