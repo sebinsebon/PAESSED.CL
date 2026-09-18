@@ -22,6 +22,9 @@ def item(text, x, y, width=10, height=10, font_size=10):
 
 class GenericPipelineTests(unittest.TestCase):
 
+    def setUp(self):
+        importer._SOURCE_IDS.clear()
+
     def test_source_inventory_assigns_stable_ids_and_owner(self):
         text_item = item("x", 100, 400, 8, 14)
         vector = {"type": "PdfObject", "bbox_ll": (99, 393, 120, 394)}
@@ -227,6 +230,129 @@ class GenericPipelineTests(unittest.TestCase):
         associations = importer.associate_visual_objects([marker], objects)
 
         self.assertEqual(associations["Im99"][0], 0)
+
+    def test_visual_asset_skips_extremely_thin_bbox_with_audit_issue(self):
+        with tempfile.TemporaryDirectory(prefix="paes-visual-thin-") as tmp:
+            asset_dir = Path(tmp) / "assets"
+            asset_dir.mkdir()
+            objects = [{
+                "type": "PdfImage",
+                "source_id": "p:object:thin",
+                "bbox_ll": (20.0, 30.0, 40.0, 30.1),
+            }]
+            issues = []
+
+            with patch.object(importer, "render_slice") as render:
+                assets, visual_assets = importer.build_visual_assets(
+                    object(), asset_dir, "q", [], objects, 100.0, 100.0,
+                    "region-q", issues=issues, evidence_id="evidence-q",
+                )
+
+            self.assertEqual(assets, [])
+            self.assertEqual(visual_assets, {})
+            render.assert_not_called()
+            self.assertEqual(issues[0]["code"], "VISUAL_ASSET_RENDER_SKIPPED")
+            self.assertIn("degenerate", issues[0]["message"])
+
+    def test_visual_asset_skips_bbox_outside_page_without_invalid_crop(self):
+        with tempfile.TemporaryDirectory(prefix="paes-visual-outside-") as tmp:
+            asset_dir = Path(tmp) / "assets"
+            asset_dir.mkdir()
+            objects = [{
+                "type": "PdfImage",
+                "source_id": "p:object:outside",
+                "bbox_ll": (120.0, 120.0, 140.0, 140.0),
+            }]
+            issues = []
+
+            with patch.object(importer, "render_slice") as render:
+                assets, _ = importer.build_visual_assets(
+                    object(), asset_dir, "q", [], objects, 100.0, 100.0,
+                    "region-q", issues=issues, evidence_id="evidence-q",
+                )
+
+            self.assertEqual(assets, [])
+            render.assert_not_called()
+            self.assertEqual(issues[0]["code"], "VISUAL_ASSET_RENDER_SKIPPED")
+            self.assertIn("outside", issues[0]["message"])
+
+    def test_render_region_clips_partially_outside_page(self):
+        self.assertEqual(
+            importer._normalize_render_region(
+                [-10.0, -5.0, 110.0, 105.0], 100.0, 100.0
+            ),
+            [0.0, 0.0, 100.0, 100.0],
+        )
+
+    def test_visual_asset_deduplicates_equal_objects_and_records_provenance(self):
+        with tempfile.TemporaryDirectory(prefix="paes-visual-duplicate-") as tmp:
+            asset_dir = Path(tmp) / "assets"
+            asset_dir.mkdir()
+            objects = [
+                {
+                    "type": "PdfImage",
+                    "source_id": "p:object:1",
+                    "bbox_ll": (20.0, 30.0, 40.0, 50.0),
+                },
+                {
+                    "type": "PdfImage",
+                    "source_id": "p:object:2",
+                    "bbox_ll": (20.0, 30.0, 40.0, 50.0),
+                },
+            ]
+            issues = []
+
+            def fake_render(*args):
+                path = asset_dir / f"{args[2]}.png"
+                from PIL import Image
+                Image.new("RGB", (2, 2), "white").save(path)
+                return path
+
+            with patch.object(importer, "render_slice", side_effect=fake_render) as render:
+                assets, _ = importer.build_visual_assets(
+                    object(), asset_dir, "q", [], objects, 100.0, 100.0,
+                    "region-q", issues=issues, evidence_id="evidence-q",
+                )
+
+            self.assertEqual(len(assets), 1)
+            self.assertEqual(render.call_count, 1)
+            self.assertEqual(
+                assets[0]["source_ids"], ["p:object:1", "p:object:2"]
+            )
+            self.assertEqual(issues[0]["code"], "DUPLICATE_VISUAL_SOURCE")
+
+    def test_visual_asset_failure_does_not_block_following_valid_object(self):
+        with tempfile.TemporaryDirectory(prefix="paes-visual-continue-") as tmp:
+            asset_dir = Path(tmp) / "assets"
+            asset_dir.mkdir()
+            objects = [
+                {
+                    "type": "PdfImage",
+                    "source_id": "p:object:thin",
+                    "bbox_ll": (20.0, 30.0, 40.0, 30.1),
+                },
+                {
+                    "type": "PdfImage",
+                    "source_id": "p:object:valid",
+                    "bbox_ll": (50.0, 30.0, 70.0, 50.0),
+                },
+            ]
+            issues = []
+
+            def fake_render(*args):
+                path = asset_dir / f"{args[2]}.png"
+                from PIL import Image
+                Image.new("RGB", (2, 2), "white").save(path)
+                return path
+
+            with patch.object(importer, "render_slice", side_effect=fake_render):
+                assets, _ = importer.build_visual_assets(
+                    object(), asset_dir, "q", [], objects, 100.0, 100.0,
+                    "region-q", issues=issues, evidence_id="evidence-q",
+                )
+
+            self.assertEqual([asset["source_ids"] for asset in assets], [["p:object:valid"]])
+            self.assertEqual(issues[0]["source_ids"], ["p:object:thin"])
 
     def test_table_requires_a_demonstrable_grid(self):
         grid = [

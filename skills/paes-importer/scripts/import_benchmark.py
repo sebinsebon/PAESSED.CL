@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 from types import SimpleNamespace
 from importlib.metadata import version as package_version
@@ -1034,10 +1035,85 @@ def marker_ranges(selected_items, option_markers, floor: float) -> dict[str, lis
     return result
 
 
+MIN_RENDERABLE_POINTS = 0.5
+
+
+class CropValidationError(ValueError):
+    """A source geometry cannot produce a valid page crop."""
+
+
+def _normalize_render_region(region: list[float], width: float, height: float) -> list[float]:
+    try:
+        values = [float(value) for value in region]
+        page_width = float(width)
+        page_height = float(height)
+    except (TypeError, ValueError):
+        raise CropValidationError("crop geometry is not numeric")
+    if len(values) != 4 or not all(math.isfinite(value) for value in [*values, page_width, page_height]):
+        raise CropValidationError("crop geometry is not finite")
+    if page_width <= 0.0 or page_height <= 0.0:
+        raise CropValidationError("page geometry is invalid")
+    x0, y0, x1, y1 = values
+    x0 = min(page_width, max(0.0, x0))
+    y0 = min(page_height, max(0.0, y0))
+    x1 = min(page_width, max(0.0, x1))
+    y1 = min(page_height, max(0.0, y1))
+    if x1 - x0 < MIN_RENDERABLE_POINTS or y1 - y0 < MIN_RENDERABLE_POINTS:
+        raise CropValidationError("crop is degenerate after page clipping")
+    return [x0, y0, x1, y1]
+
+
+def _visual_bbox_issue(object_bbox, width: float, height: float) -> str | None:
+    try:
+        values = [float(value) for value in object_bbox]
+        page_width = float(width)
+        page_height = float(height)
+    except (TypeError, ValueError):
+        return "visual object geometry is not numeric"
+    if len(values) != 4 or not all(math.isfinite(value) for value in [*values, page_width, page_height]):
+        return "visual object geometry is not finite"
+    x0, y0, x1, y1 = values
+    if x1 - x0 < MIN_RENDERABLE_POINTS or y1 - y0 < MIN_RENDERABLE_POINTS:
+        return "visual object geometry is degenerate"
+    if x1 <= 0.0 or y1 <= 0.0 or x0 >= page_width or y0 >= page_height:
+        return "visual object geometry is outside page bounds"
+    return None
+
+
+def _append_visual_asset_issue(
+    issues: list[dict] | None,
+    question_id: str,
+    region_id: str,
+    evidence_id: str | None,
+    code: str,
+    source_ids: list[str],
+    message: str,
+) -> None:
+    if issues is None:
+        return
+    issue_id = hashlib.sha256(
+        "|".join([question_id, code, *sorted(source_ids)]).encode()
+    ).hexdigest()[:16]
+    issues.append({
+        "id": f"issue-{question_id}-{code.lower()}-{issue_id}",
+        "code": code,
+        "severity": "warning",
+        "target_id": question_id,
+        "region_ids": [region_id],
+        "evidence_ids": [evidence_id] if evidence_id else [],
+        "blocks_completion": True,
+        "message": message,
+        "source_ids": list(dict.fromkeys(source_ids)),
+    })
+
+
 def render_slice(page, output: Path, stem: str, region: list[float], width: float, height: float) -> Path:
-    x0, y0, x1, y1 = region
+    x0, y0, x1, y1 = _normalize_render_region(region, width, height)
     crop = (x0, height - y1, width - x1, y0)
-    bitmap = page.render(scale=2, crop=crop)
+    try:
+        bitmap = page.render(scale=2, crop=crop)
+    except Exception as exc:
+        raise CropValidationError(f"page renderer rejected crop: {exc}") from exc
     path = output / f"{stem}.png"
     bitmap.to_pil().save(path)
     return path
@@ -1113,7 +1189,7 @@ def asset_region(
     padding_y: float = 3.0,
 ) -> list[float]:
     x0, y0, x1, y1 = object_bbox
-    return bbox_tl(
+    return _normalize_render_region(bbox_tl(
         (
             max(0.0, x0 - padding_x),
             max(0.0, y0 - padding_y),
@@ -1121,7 +1197,7 @@ def asset_region(
             min(page_height, y1 + padding_y),
         ),
         page_height,
-    )
+    ), page_width, page_height)
 
 
 def add_asset(
@@ -1135,17 +1211,23 @@ def add_asset(
     padding_x: float = 3.0,
     padding_y: float = 3.0,
 ) -> tuple[dict, list[float]]:
-    region = asset_region(
-        object_bbox,
-        page_width,
-        page_height,
-        padding_x=padding_x,
-        padding_y=padding_y,
-    )
-    path = render_slice(page, asset_dir, asset_id, region, page_width, page_height)
-    from PIL import Image
-    with Image.open(path) as image:
-        width, height = image.size
+    bbox_issue = _visual_bbox_issue(object_bbox, page_width, page_height)
+    if bbox_issue:
+        return None, {"reason": bbox_issue}
+    try:
+        region = asset_region(
+            object_bbox,
+            page_width,
+            page_height,
+            padding_x=padding_x,
+            padding_y=padding_y,
+        )
+        path = render_slice(page, asset_dir, asset_id, region, page_width, page_height)
+        from PIL import Image
+        with Image.open(path) as image:
+            width, height = image.size
+    except Exception as exc:
+        return None, {"reason": str(exc)}
     return {
         "asset_id": asset_id,
         "path": str(path.relative_to(asset_dir.parent)).replace("\\", "/"),
@@ -1212,19 +1294,71 @@ def build_visual_assets(
     page_width: float,
     page_height: float,
     region_id: str,
+    issues: list[dict] | None = None,
+    evidence_id: str | None = None,
 ) -> tuple[list[dict], dict[str, str]]:
     """Render all relevant visual objects and associate them by position."""
     image_objects = [obj for obj in selected_objects if obj.get("type") == "PdfImage"]
+    image_groups = []
+    groups_by_bbox = {}
+    for index, image_object in enumerate(image_objects):
+        try:
+            key = tuple(round(float(value), 3) for value in image_object.get("bbox_ll", []))
+        except (TypeError, ValueError):
+            key = ("invalid", index)
+        if len(key) != 4:
+            key = ("invalid", index)
+        group = groups_by_bbox.get(key)
+        if group is None:
+            group = {"object": image_object, "objects": [image_object]}
+            groups_by_bbox[key] = group
+            image_groups.append(group)
+        else:
+            group["objects"].append(image_object)
+    for group in image_groups:
+        if len(group["objects"]) > 1:
+            _append_visual_asset_issue(
+                issues, question_id, region_id, evidence_id,
+                "DUPLICATE_VISUAL_SOURCE",
+                [_source_id(obj, "object") for obj in group["objects"]],
+                "Duplicate visual source objects share the same geometry.",
+            )
+    renderable_groups = []
+    for group in image_groups:
+        reason = _visual_bbox_issue(
+            group["object"].get("bbox_ll", ()), page_width, page_height
+        )
+        if reason:
+            _append_visual_asset_issue(
+                issues, question_id, region_id, evidence_id,
+                "VISUAL_ASSET_RENDER_SKIPPED",
+                [_source_id(obj, "object") for obj in group["objects"]],
+                f"Visual asset was skipped: {reason}.",
+            )
+            continue
+        renderable_groups.append(group)
+    image_groups = renderable_groups
+    image_objects = [group["object"] for group in image_groups]
     associations = associate_visual_objects(markers, image_objects)
     generated: list[dict] = []
     visual_assets: dict[str, str] = {}
     for index, image_object in enumerate(image_objects):
         asset_id = f"asset-{question_id}-visual-{index + 1}"
-        asset, _ = add_asset(
+        asset, result = add_asset(
             page, asset_dir, asset_id, tuple(image_object["bbox_ll"]),
             page_width, page_height, region_id, padding_x=0.0, padding_y=0.0,
         )
-        asset["source_ids"] = [_source_id(image_object, "object")]
+        if asset is None:
+            _append_visual_asset_issue(
+                issues, question_id, region_id, evidence_id,
+                "VISUAL_ASSET_RENDER_SKIPPED",
+                [_source_id(obj, "object") for obj in image_groups[index]["objects"]],
+                f"Visual asset was skipped: {result.get('reason', 'unknown render error')}.",
+            )
+            continue
+        asset["source_ids"] = [
+            _source_id(obj, "object") for obj in image_groups[index]["objects"]
+        ]
         generated.append(asset)
     for marker_key, indexes in associations.items():
         if indexes:
@@ -1232,7 +1366,12 @@ def build_visual_assets(
 
     # If a marker has no raster object, preserve it through a rendered vector
     # fallback. The fallback is still spatially derived and never ID-specific.
-    vector_objects = [obj for obj in selected_objects if obj.get("type") == "PdfObject"]
+    vector_objects = [
+        obj for obj in selected_objects
+        if obj.get("type") == "PdfObject"
+        and _visual_bbox_issue(obj.get("bbox_ll", ()), page_width, page_height) is None
+    ]
+    vector_asset_by_sources = {}
     next_index = len(image_objects)
     for marker in markers:
         match = IMAGE_MARKER_RE.fullmatch(marker.text.strip())
@@ -1247,16 +1386,30 @@ def build_visual_assets(
         ]
         if not nearby:
             continue
+        source_key = tuple(sorted(_source_id(obj, "object") for obj in nearby))
+        existing_asset_id = vector_asset_by_sources.get(source_key)
+        if existing_asset_id:
+            visual_assets[match.group(1)] = existing_asset_id
+            continue
         asset_id = f"asset-{question_id}-visual-{next_index + 1}"
         next_index += 1
         bbox = _bbox_union([tuple(obj["bbox_ll"]) for obj in nearby])
-        asset, _ = add_asset(
+        asset, result = add_asset(
             page, asset_dir, asset_id, bbox, page_width, page_height, region_id,
             padding_x=3.0, padding_y=3.0,
         )
+        if asset is None:
+            _append_visual_asset_issue(
+                issues, question_id, region_id, evidence_id,
+                "VISUAL_ASSET_RENDER_SKIPPED",
+                [_source_id(obj, "object") for obj in nearby],
+                f"Vector visual asset was skipped: {result.get('reason', 'unknown render error')}.",
+            )
+            continue
         asset["source_ids"] = [_source_id(obj, "object") for obj in nearby]
         generated.append(asset)
         visual_assets[match.group(1)] = asset_id
+        vector_asset_by_sources[source_key] = asset_id
     return generated, visual_assets
 
 
@@ -1850,7 +2003,8 @@ def main() -> None:
                 ]
                 generated_assets, visual_assets = build_visual_assets(
                     page, asset_dir, case["id"], visual_markers, selected_objects,
-                    page_width, page_height, region_id,
+                    page_width, page_height, region_id, issues=issues,
+                    evidence_id=evidence_id,
                 )
                 assets.extend(generated_assets)
 
