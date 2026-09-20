@@ -25,6 +25,8 @@ PDFS = {
 }
 OPTION_RE = re.compile(r"^([A-D])\)$")
 QUESTION_RE = re.compile(r"^(\d+)\.$")
+QUESTION_PREFIX_RE = re.compile(r"^(\d+)\.(?=\s+\S)")
+QUESTION_MARKER_LEFT_TOLERANCE = 12.0
 FOOTER_RE = re.compile(r"^-\s*\d+\s*-$")
 MATHISH_RE = re.compile(r"^[0-9\s\u2212+\-().\u00b7*/]+$")
 
@@ -282,9 +284,30 @@ def expand_inline_items(items):
         else:
             expanded.append(item)
 
+    # Some PDFs keep a question marker and the start of its stem in one text
+    # item (for example, ``1. Alicia ...``).  Only split prefixes aligned to
+    # the page's numbered-question margin; indented numbered prose remains a
+    # normal text item.
+    question_prefix_x = [
+        float(item.x)
+        for item in expanded
+        if QUESTION_PREFIX_RE.match(item.text)
+    ]
+    question_left = min(question_prefix_x) if question_prefix_x else None
+
     result = []
     for index, item in enumerate(expanded):
         text = item.text
+        question_prefix = QUESTION_PREFIX_RE.match(text)
+        if (
+            question_prefix
+            and question_left is not None
+            and float(item.x) <= question_left + QUESTION_MARKER_LEFT_TOLERANCE
+        ):
+            marker_end = question_prefix.end()
+            result.append(_clone_text_item(item, text[:marker_end], 0, marker_end, 1))
+            result.append(_clone_text_item(item, text[marker_end:], marker_end, len(text), 2))
+            continue
         suffix = re.search(r"([?!.,])$", text)
         if suffix and not QUESTION_RE.fullmatch(text.strip()) and not OPTION_RE.fullmatch(text.strip()) and _is_mathish(text[:suffix.start()].strip()):
             result.append(_clone_text_item(item, text[:suffix.start()], 0, suffix.start(), 1))

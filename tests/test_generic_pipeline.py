@@ -431,6 +431,50 @@ class GenericPipelineTests(unittest.TestCase):
             "modela mediante p = g", "·", "m", ", tal que g es constante"
         ])
 
+    def test_separate_question_marker_is_preserved(self):
+        expanded = importer.expand_inline_items([
+            item("1.", 72, 700, 10, 12),
+            item("Alicia está probando", 88, 700, 120, 12),
+        ])
+
+        self.assertEqual([entry.text for entry in expanded], ["1.", "Alicia está probando"])
+        self.assertEqual(
+            [entry.text for entry in expanded if importer.QUESTION_RE.fullmatch(entry.text.strip())],
+            ["1."],
+        )
+
+    def test_joined_question_marker_is_split_from_stem_without_losing_text(self):
+        original = "1. Alicia está probando"
+        expanded = importer.expand_inline_items([item(original, 72, 700, 150, 12)])
+
+        self.assertEqual([entry.text for entry in expanded], ["1.", " Alicia está probando"])
+        self.assertEqual("".join(entry.text for entry in expanded), original)
+        self.assertEqual(expanded[1].text.strip(), "Alicia está probando")
+        self.assertEqual(
+            [entry.text for entry in expanded if importer.QUESTION_RE.fullmatch(entry.text.strip())],
+            ["1."],
+        )
+
+    def test_decimal_prefix_is_not_split_as_question_marker(self):
+        original = "1.5 es un número decimal"
+        expanded = importer.expand_inline_items([item(original, 72, 700, 150, 12)])
+
+        self.assertEqual([entry.text for entry in expanded], [original])
+        self.assertFalse(any(importer.QUESTION_RE.fullmatch(entry.text.strip()) for entry in expanded))
+
+    def test_indented_internal_numbering_is_not_split_as_question_marker(self):
+        internal = "1. Primero se suma"
+        expanded = importer.expand_inline_items([
+            item("1. Pregunta principal", 72, 700, 150, 12),
+            item(internal, 108, 660, 150, 12),
+        ])
+
+        self.assertEqual(
+            [entry.text for entry in expanded if importer.QUESTION_RE.fullmatch(entry.text.strip())],
+            ["1."],
+        )
+        self.assertIn(internal, [entry.text for entry in expanded])
+
     def test_math_operand_split_does_not_mutilate_hyphenated_prose(self):
         items = [
             item("-", 100, 500, 5, 12),
