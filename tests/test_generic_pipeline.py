@@ -368,6 +368,95 @@ class GenericPipelineTests(unittest.TestCase):
         self.assertIsNotNone(candidate)
         self.assertEqual(candidate["kind"], "table")
 
+    def test_joined_option_markers_create_exclusive_options_without_losing_content(self):
+        items = [
+            item("A) 13,2", 90, 400, 45, 12),
+            item("B) 8 kg", 90, 380, 45, 12),
+            item("C) 2,0625", 90, 360, 45, 12),
+            item("D) 0,132 kg", 90, 340, 55, 12),
+        ]
+        importer.assign_source_ids("p", items, [])
+
+        expanded = importer.expand_inline_items(items)
+        markers = [
+            entry for entry in expanded
+            if importer.OPTION_RE.fullmatch(entry.text.strip())
+        ]
+        members, _, ambiguous = importer.assign_exclusive_option_members(
+            expanded, [], markers
+        )
+        options = [
+            importer.option_for_items(label, members[label], "evidence-q", {})
+            for label in sorted(members)
+        ]
+
+        self.assertEqual([marker.text for marker in markers], ["A)", "B)", "C)", "D)"])
+        self.assertEqual(ambiguous, [])
+        self.assertEqual([option["label"] for option in options], ["A", "B", "C", "D"])
+        self.assertEqual(
+            [option["blocks"][0]["text"].strip() for option in options],
+            ["13,2", "8 kg", "2,0625", "0,132 kg"],
+        )
+        self.assertEqual(
+            "".join(part.text for part in expanded if part.parent_source_id == "p:text:0"),
+            "A) 13,2",
+        )
+
+    def test_table_does_not_consume_visual_rendered_as_separate_image(self):
+        grid = [
+            {"type": "PdfObject", "bbox_ll": (100, 300, 200, 301)},
+            {"type": "PdfObject", "bbox_ll": (100, 250, 200, 251)},
+            {"type": "PdfObject", "bbox_ll": (100, 250, 101, 301)},
+            {"type": "PdfObject", "bbox_ll": (150, 250, 151, 301)},
+            {"type": "PdfObject", "bbox_ll": (199, 250, 200, 301)},
+        ]
+        image_object = {
+            "type": "PdfImage",
+            "bbox_ll": (190, 245, 260, 305),
+        }
+        image_marker = item("[Image: Im1]", 210, 270, 60, 12)
+        objects = [image_object, *grid]
+        importer.assign_source_ids("p", [image_marker], objects)
+
+        blocks = importer.reconstruct_generic_blocks(
+            [image_marker],
+            objects,
+            "evidence-q",
+            {"Im1": "asset-q-image"},
+            owner="stem",
+            asset_sources={"asset-q-image": ["p:object:0"]},
+        )
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [image_marker], objects
+        )
+        coverage = importer.assess_source_coverage(inventory, blocks)
+
+        self.assertEqual(coverage["duplicated"], [])
+        visual = next(entry for entry in inventory if entry["id"] == "p:object:0")
+        self.assertEqual(visual["representation"], ["image"])
+        self.assertEqual(visual["consumers"], [{"type": "image", "owner": "stem"}])
+
+    def test_visual_crossing_stem_and_options_remains_ambiguous(self):
+        markers = [
+            item("A)", 90, 400, 12, 12),
+            item("B)", 90, 380, 12, 12),
+            item("C)", 90, 360, 12, 12),
+            item("D)", 90, 340, 12, 12),
+        ]
+        image_marker = item("[Image: Im1]", 110, 250, 150, 230)
+        spanning_visual = {
+            "type": "PdfImage",
+            "bbox_ll": (110, 250, 260, 480),
+        }
+
+        item_members, object_members, ambiguous = importer.assign_exclusive_option_members(
+            [*markers, image_marker], [spanning_visual], markers
+        )
+
+        self.assertTrue(all(image_marker not in members for members in item_members.values()))
+        self.assertTrue(all(spanning_visual not in members for members in object_members.values()))
+        self.assertEqual(ambiguous, [image_marker, spanning_visual])
+
     def test_coverage_marks_unclaimed_math_as_incomplete(self):
         items = [item("2", 100, 400, 8, 14), item("3", 100, 380, 8, 14)]
         objects = [{"type": "PdfObject", "bbox_ll": (99, 393, 120, 394)}]

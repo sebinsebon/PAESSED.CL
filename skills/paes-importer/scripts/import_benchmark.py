@@ -24,6 +24,7 @@ PDFS = {
     2027: PDF_ROOT / "2027-26-06-17-paes-invierno-oficial-matematica1-p2027.pdf",
 }
 OPTION_RE = re.compile(r"^([A-D])\)$")
+OPTION_PREFIX_RE = re.compile(r"^([A-D])\)(?=\s+\S)")
 QUESTION_RE = re.compile(r"^(\d+)\.$")
 QUESTION_PREFIX_RE = re.compile(r"^(\d+)\.(?=\s+\S)")
 QUESTION_MARKER_LEFT_TOLERANCE = 12.0
@@ -305,6 +306,12 @@ def expand_inline_items(items):
             and float(item.x) <= question_left + QUESTION_MARKER_LEFT_TOLERANCE
         ):
             marker_end = question_prefix.end()
+            result.append(_clone_text_item(item, text[:marker_end], 0, marker_end, 1))
+            result.append(_clone_text_item(item, text[marker_end:], marker_end, len(text), 2))
+            continue
+        option_prefix = OPTION_PREFIX_RE.match(text)
+        if option_prefix:
+            marker_end = option_prefix.end()
             result.append(_clone_text_item(item, text[:marker_end], 0, marker_end, 1))
             result.append(_clone_text_item(item, text[marker_end:], marker_end, len(text), 2))
             continue
@@ -1021,6 +1028,12 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
             members[label].append(item)
             continue
         box = _item_bbox(item)
+        if (
+            IMAGE_MARKER_RE.fullmatch(item.text.strip())
+            and box[1] <= option_top + 25.0 < box[3]
+        ):
+            ambiguous.append(item)
+            continue
         center_y = (box[1] + box[3]) / 2
         if center_y > option_top + 25.0:
             continue
@@ -1032,6 +1045,12 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
 
     for obj in selected_objects:
         box = obj["bbox_ll"]
+        if (
+            obj.get("type") == "PdfImage"
+            and box[1] <= option_top + 25.0 < box[3]
+        ):
+            ambiguous.append(obj)
+            continue
         center_y = (box[1] + box[3]) / 2
         if center_y > option_top + 25.0:
             continue
@@ -1504,7 +1523,9 @@ def reconstruct_generic_blocks(
         table_item_ids = {id(item) for item in table_items}
         table_objects = [
             obj for obj in objects
-            if obj["bbox_ll"][2] >= x0 - 2.5
+            # A rendered visual must remain exclusively owned by its image block.
+            if obj.get("type") != "PdfImage"
+            and obj["bbox_ll"][2] >= x0 - 2.5
             and obj["bbox_ll"][0] <= x1 + 2.5
             and obj["bbox_ll"][3] >= y0 - 2.5
             and obj["bbox_ll"][1] <= y1 + 2.5
