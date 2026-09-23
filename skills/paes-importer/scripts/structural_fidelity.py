@@ -3,7 +3,7 @@ import re
 import hashlib
 from statistics import median
 
-SIGNAL = re.compile(r"[=+\u2212\u00b7\u03c0\u221a\u00d7\u00f7^\u00b2\u00b3\u2264\u2265]")
+SIGNAL = re.compile(r"[=+\u2212\u00b7\u22c5\u03c0\u221a\u00d7\u00f7^\u00b2\u00b3\u2264\u2265]")
 
 def union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes),

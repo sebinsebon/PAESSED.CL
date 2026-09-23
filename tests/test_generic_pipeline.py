@@ -25,6 +25,99 @@ class GenericPipelineTests(unittest.TestCase):
     def setUp(self):
         importer._SOURCE_IDS.clear()
 
+    def test_unreconstructed_dot_operator_cannot_pass_fidelity(self):
+        for operator in ("\u22c5", "\u00b7"):
+            with self.subTest(operator=operator):
+                items = [item("8000 " + operator + operator, 100, 400, 60, 12),
+                         item("()", 165, 400, 40, 12)]
+                importer.assign_source_ids("p", items, [])
+                proposed = [{"type": "text", "text": i.text,
+                             "owner": "option:A", "source_ids": [importer._source_id(i)]}
+                            for i in items]
+                blocks = importer.validate_and_order(
+                    proposed, items, [], "e", importer._source_id)
+                self.assertFalse(importer.fidelity_report(blocks)["complete"])
+                self.assertTrue(any(b["type"] == "unresolved" for b in blocks))
+
+    def test_stem_continuation_above_first_option_keeps_stem_ownership(self):
+        stem = item("termina aqui la pregunta?", 100, 418, 160, 12)
+        markers = [item(label + ")", 90, 400 - i * 30, 12, 12)
+                   for i, label in enumerate("ABCD")]
+        answer = item("3", 120, 400, 8, 12)
+        members, _, ambiguous = importer.assign_exclusive_option_members(
+            [stem, answer, *markers], [], markers)
+        self.assertFalse(any(stem in values for values in members.values()))
+        self.assertNotIn(stem, ambiguous)
+        self.assertIn(answer, members["A"])
+
+    def test_accented_stem_prose_above_first_option_keeps_stem_ownership(self):
+        stem = item("\u00bfQu\u00e9? \u00bfCu\u00e1l? Si\u0301?", 100, 418, 150, 12)
+        markers = [item(label + ")", 90, 400 - i * 30, 12, 12)
+                   for i, label in enumerate("ABCD")]
+        answer = item("3", 120, 400, 8, 12)
+        members, _, ambiguous = importer.assign_exclusive_option_members(
+            [stem, answer, *markers], [], markers)
+
+        self.assertFalse(any(stem in values for values in members.values()))
+        self.assertNotIn(stem, ambiguous)
+        self.assertIn(answer, members["A"])
+
+    def test_short_stem_prose_fragment_above_first_option_keeps_stem_ownership(self):
+        stem = item("S\u00ed", 100, 418, 20, 12)
+        markers = [item(label + ")", 90, 400 - i * 30, 12, 12)
+                   for i, label in enumerate("ABCD")]
+        answer = item("3", 120, 400, 8, 12)
+        members, _, ambiguous = importer.assign_exclusive_option_members(
+            [stem, answer, *markers], [], markers)
+
+        self.assertFalse(any(stem in values for values in members.values()))
+        self.assertNotIn(stem, ambiguous)
+        self.assertIn(answer, members["A"])
+
+    def test_reconstructed_dot_operator_can_pass_structural_fidelity(self):
+        items = [item("8000", 100, 400, 30, 12),
+                 item("\u22c5", 132, 400, 8, 12),
+                 item("30,3", 142, 400, 25, 12)]
+        importer.assign_source_ids("p", items, [])
+        proposed = [{"type": "math", "latex": r"8000\cdot 30{,}3",
+                     "owner": "option:A", "source_ids": [
+                         importer._source_id(entry) for entry in items]}]
+
+        blocks = importer.validate_and_order(
+            proposed, items, [], "e", importer._source_id)
+
+        self.assertTrue(importer.fidelity_report(blocks)["complete"])
+        self.assertEqual(blocks[0]["latex"], r"8000\cdot 30{,}3")
+
+    def test_raised_numeric_operand_remains_owned_by_its_option(self):
+        base = item("x", 120, 400, 8, 12)
+        raised = item("4", 129, 414, 5, 8)
+        markers = [item(label + ")", 90, 400 - i * 30, 12, 12)
+                   for i, label in enumerate("ABCD")]
+        members, _, ambiguous = importer.assign_exclusive_option_members(
+            [base, raised, *markers], [], markers)
+
+        self.assertIn(base, members["A"])
+        self.assertIn(raised, members["A"])
+        self.assertNotIn(raised, ambiguous)
+
+    def test_fragmented_group_and_exponent_in_option_are_not_verified(self):
+        items = [item("8000 \u22c5\u22c5", 100, 400, 60, 12),
+                 item("()", 165, 400, 40, 12),
+                 item("30,3", 170, 400, 25, 12),
+                 item("4", 200, 408, 5, 8)]
+        importer.assign_source_ids("p", items, [])
+        proposed = [
+            {"type": "text", "text": i.text, "owner": "option:A",
+             "source_ids": [importer._source_id(i)]} for i in items[:2]]
+        proposed.append({"type": "math", "latex": "30,3^{4}",
+                         "owner": "option:A", "source_ids": [
+                             importer._source_id(i) for i in items[2:]]})
+        blocks = importer.validate_and_order(proposed, items, [], "e", importer._source_id)
+        self.assertFalse(importer.fidelity_report(blocks)["complete"])
+        refs = [sid for b in blocks for sid in b.get("source_ids", [])]
+        self.assertCountEqual(refs, [importer._source_id(i) for i in items])
+
     def test_source_inventory_assigns_stable_ids_and_owner(self):
         text_item = item("x", 100, 400, 8, 14)
         vector = {"type": "PdfObject", "bbox_ll": (99, 393, 120, 394)}

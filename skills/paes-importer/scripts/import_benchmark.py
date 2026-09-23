@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from types import SimpleNamespace
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -24,6 +25,7 @@ PDFS = {
     2027: PDF_ROOT / "2027-26-06-17-paes-invierno-oficial-matematica1-p2027.pdf",
 }
 OPTION_RE = re.compile(r"^([A-D])\)$")
+UNICODE_LETTER_RUN_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 OPTION_PREFIX_RE = re.compile(r"^([A-D])\)(?=\s+\S)")
 QUESTION_RE = re.compile(r"^(\d+)\.$")
 QUESTION_PREFIX_RE = re.compile(r"^(\d+)\.(?=\s+\S)")
@@ -989,6 +991,9 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
     if not option_markers:
         return members, object_members, []
 
+    top_option_boundary = max(
+        float(marker.y + marker.height) for marker in option_markers
+    )
     marker_centers = []
     for marker in option_markers:
         box = _item_bbox(marker)
@@ -1028,6 +1033,14 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
             members[label].append(item)
             continue
         box = _item_bbox(item)
+        # Prose fully above the first answer row belongs to the stem, even
+        # inside the wider window reserved for raised mathematical operands.
+        if (
+            not IMAGE_MARKER_RE.fullmatch(item.text.strip())
+            and UNICODE_LETTER_RUN_RE.search(unicodedata.normalize("NFC", item.text))
+            and box[1] > top_option_boundary
+        ):
+            continue
         if (
             IMAGE_MARKER_RE.fullmatch(item.text.strip())
             and box[1] <= option_top + 25.0 < box[3]
