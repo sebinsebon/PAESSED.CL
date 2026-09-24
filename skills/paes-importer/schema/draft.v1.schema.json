@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paessed.cl/schema/draft.v1.schema.json",
+  "title": "PAESSED Stage 1 draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sources", "extraction", "pages", "regions", "assets", "source_objects", "evidence", "contexts", "questions", "unassigned_fragments", "issues"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+    "run": {"type": "object", "additionalProperties": false, "properties": {
+      "purpose": {"enum": ["individual", "benchmark"]},
+      "selection_sha256": {"$ref": "#/$defs/hash"},
+      "extensions": {"$ref": "#/$defs/extensions"}
+    }},
+    "extraction": {"type": "object", "additionalProperties": false,
+      "required": ["status", "tools", "ai_interventions", "verification_status", "needs_manual_audit"],
+      "properties": {
+        "status": {"enum": ["complete", "partial", "failed"]},
+        "tools": {"type": "object", "additionalProperties": {"type": "string"}},
+        "ai_interventions": {"type": "array", "items": {"$ref": "#/$defs/ai_intervention"}},
+        "verification_status": {"const": "not_run"},
+        "needs_manual_audit": {"type": "boolean"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "pages": {"type": "array", "items": {"$ref": "#/$defs/page"}},
+    "regions": {"type": "array", "items": {"$ref": "#/$defs/region"}},
+    "assets": {"type": "array", "items": {"$ref": "#/$defs/asset"}},
+    "source_objects": {"type": "array", "items": {"$ref": "#/$defs/source_object"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "contexts": {"type": "array", "items": {"$ref": "#/$defs/context"}},
+    "questions": {"type": "array", "items": {"$ref": "#/$defs/question"}},
+    "unassigned_fragments": {"type": "array", "items": {"$ref": "#/$defs/fragment"}},
+    "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+    "extensions": {"$ref": "#/$defs/extensions"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "hash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "bbox": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number"}},
+    "matrix": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "number"}},
+    "extensions": {"type": "object", "patternProperties": {"^[a-z][a-z0-9_.-]*[.][a-z][a-z0-9_.-]*$": {}}, "additionalProperties": false},
+    "source": {"type": "object", "additionalProperties": false,
+      "required": ["id", "sha256", "page_count"], "properties": {
+        "id": {"$ref": "#/$defs/id"}, "sha256": {"$ref": "#/$defs/hash"},
+        "page_count": {"type": "integer", "minimum": 1},
+        "origin": {"type": ["string", "null"]}, "local_path": {"type": ["string", "null"]},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "page": {"type": "object", "additionalProperties": false,
+      "required": ["id", "source_id", "page_number", "width", "height", "rotation", "coordinate_system", "transform"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "source_id": {"$ref": "#/$defs/id"},
+        "page_number": {"type": "integer", "minimum": 1},
+        "width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0},
+        "rotation": {"type": "integer"}, "coordinate_system": {"const": "top_left_pdf_points"},
+        "transform": {"$ref": "#/$defs/matrix"}, "crop_box": {"$ref": "#/$defs/bbox"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "region": {"type": "object", "additionalProperties": false,
+      "required": ["id", "page_id", "bbox", "kind", "transform"], "properties": {
+        "id": {"$ref": "#/$defs/id"}, "page_id": {"$ref": "#/$defs/id"},
+        "bbox": {"$ref": "#/$defs/bbox"}, "kind": {"$ref": "#/$defs/id"},
+        "confidence": {"type": "string"}, "transform": {"$ref": "#/$defs/matrix"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "asset": {"type": "object", "additionalProperties": false,
+      "required": ["asset_id", "path", "mime", "width", "height", "sha256", "region_ids"],
+      "properties": {
+        "asset_id": {"$ref": "#/$defs/id"}, "path": {"$ref": "#/$defs/id"},
+        "mime": {"type": "string", "pattern": "^image/"},
+        "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/hash"}, "region_ids": {"$ref": "#/$defs/ids"},
+        "source_type": {"type": "string"}, "source_bbox": {"$ref": "#/$defs/bbox"},
+        "source_ids": {"$ref": "#/$defs/ids"}, "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "evidence": {"type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "path", "region_ids", "reason", "sha256"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "kind": {"type": "string"},
+        "path": {"$ref": "#/$defs/id"}, "region_ids": {"$ref": "#/$defs/ids"},
+        "reason": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"},
+        "bbox": {"$ref": "#/$defs/bbox"}, "candidate_id": {"$ref": "#/$defs/id"},
+        "parent_evidence_id": {"$ref": "#/$defs/id"}, "source_ids": {"$ref": "#/$defs/ids"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "source_object": {"type": "object", "additionalProperties": false,
+      "required": ["id", "region_id", "owner", "kind", "candidate_type", "bbox"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "region_id": {"$ref": "#/$defs/id"},
+        "owner": {"$ref": "#/$defs/id"}, "kind": {"$ref": "#/$defs/id"},
+        "candidate_type": {"$ref": "#/$defs/id"}, "bbox": {"$ref": "#/$defs/bbox"},
+        "candidate_id": {"$ref": "#/$defs/id"}, "parent_id": {"$ref": "#/$defs/id"},
+        "source_span": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}},
+        "representation": {"type": "string"}, "consumers": {"type": "array", "items": {"type": "object"}},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "proof": {"type": "object", "additionalProperties": false,
+      "required": ["status", "reasons", "source_ids", "representation_type", "method"],
+      "properties": {
+        "status": {"enum": ["verified", "unresolved"]}, "reasons": {"type": "array", "items": {"type": "string"}},
+        "source_ids": {"$ref": "#/$defs/ids"}, "representation_type": {"type": "string"},
+        "method": {"type": "string"}, "baseline": {"type": "number"},
+        "bbox_ll": {"$ref": "#/$defs/bbox"}, "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "block": {"type": "object", "additionalProperties": false,
+      "required": ["type", "source_ids"],
+      "properties": {
+        "type": {"enum": ["text", "math", "image", "table", "unresolved"]},
+        "text": {"type": "string"}, "latex": {"type": "string", "minLength": 1},
+        "display": {"type": "boolean"}, "asset_id": {"$ref": "#/$defs/id"},
+        "rows": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+          "required": ["cells"], "properties": {"cells": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+            "required": ["blocks"], "properties": {"blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}}}}}}}},
+        "reason": {"type": "string"}, "raw_text": {"type": "string"},
+        "evidence_id": {"$ref": "#/$defs/id"}, "ai_evidence_id": {"$ref": "#/$defs/id"},
+        "owner": {"$ref": "#/$defs/id"}, "source_ids": {"$ref": "#/$defs/ids"},
+        "structural_fidelity": {"$ref": "#/$defs/proof"},
+        "candidate_id": {"$ref": "#/$defs/id"}, "candidate_type": {"type": "string"},
+        "candidate_blocks": {"type": "array", "items": {"type": "object"}},
+        "ai_on_demand": {"type": "object"}, "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "allOf": [
+        {"if": {"properties": {"type": {"const": "text"}}}, "then": {"required": ["text"]}},
+        {"if": {"properties": {"type": {"const": "math"}}}, "then": {"required": ["latex", "display"]}},
+        {"if": {"properties": {"type": {"const": "image"}}}, "then": {"required": ["asset_id"]}},
+        {"if": {"properties": {"type": {"const": "table"}}}, "then": {"required": ["rows"]}},
+        {"if": {"properties": {"type": {"const": "unresolved"}}}, "then": {"required": ["reason", "evidence_id"]}}
+      ]
+    },
+    "option": {"type": "object", "additionalProperties": false,
+      "required": ["id", "label", "blocks", "owner", "source_ids"], "properties": {
+        "id": {"$ref": "#/$defs/id"}, "label": {"$ref": "#/$defs/id"},
+        "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "owner": {"$ref": "#/$defs/id"}, "source_ids": {"$ref": "#/$defs/ids"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "context": {"type": "object", "additionalProperties": false,
+      "required": ["id", "region_ids", "blocks"], "properties": {
+        "id": {"$ref": "#/$defs/id"}, "region_ids": {"$ref": "#/$defs/ids"},
+        "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "fragment": {"type": "object", "additionalProperties": false,
+      "required": ["id", "region_ids", "blocks", "reason"], "properties": {
+        "id": {"$ref": "#/$defs/id"}, "region_ids": {"$ref": "#/$defs/ids"},
+        "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "reason": {"type": "string"}, "continuation_candidate": {"type": "boolean"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "question": {"type": "object", "additionalProperties": false,
+      "required": ["id", "original_number", "region_ids", "context_ids", "stem", "options", "structural_fidelity", "extraction_status", "needs_manual_audit"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "original_number": {"type": ["string", "null"]},
+        "region_ids": {"$ref": "#/$defs/ids"}, "context_ids": {"$ref": "#/$defs/ids"},
+        "stem": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "options": {"type": "array", "items": {"$ref": "#/$defs/option"}},
+        "structural_fidelity": {"type": "object", "additionalProperties": false,
+          "required": ["complete", "failures"], "properties": {
+            "complete": {"type": "boolean"}, "failures": {"type": "array", "items": {"type": "object"}}
+          }},
+        "extraction_status": {"enum": ["complete", "partial", "failed"]},
+        "needs_manual_audit": {"type": "boolean"}, "coverage": {"type": "object"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "issue": {"type": "object", "additionalProperties": false,
+      "required": ["id", "code", "severity", "target_id", "region_ids", "message", "blocks_completion"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "code": {"$ref": "#/$defs/id"},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "target_id": {"$ref": "#/$defs/id"}, "region_ids": {"$ref": "#/$defs/ids"},
+        "evidence_ids": {"$ref": "#/$defs/ids"}, "source_ids": {"$ref": "#/$defs/ids"},
+        "message": {"type": "string"}, "blocks_completion": {"type": "boolean"},
+        "resolution": {"type": "string"}, "failures": {"type": "array", "items": {"type": "object"}},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }},
+    "ai_intervention": {"type": "object", "additionalProperties": false,
+      "required": ["id", "cli", "model", "target_id", "question_id", "evidence_ids", "source_ids", "action", "result_type", "validation", "response", "timestamp"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "cli": {"type": "string"}, "model": {"type": "string"},
+        "target_id": {"$ref": "#/$defs/id"}, "question_id": {"$ref": "#/$defs/id"},
+        "candidate_type": {"type": ["string", "null"]},
+        "evidence_ids": {"$ref": "#/$defs/ids"}, "source_ids": {"$ref": "#/$defs/ids"},
+        "action": {"enum": ["replace", "retain_unresolved"]},
+        "result_type": {"enum": ["text", "math", "image", "table", "unresolved"]},
+        "validation": {"type": "string"}, "response": {"type": "object"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      }}
+  }
+}
