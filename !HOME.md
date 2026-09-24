@@ -4,8 +4,8 @@ Nombre comercial: por definir.
 
 ## Ahora mismo
 
-Objetivo actual:
-Organizar y definir completamente el producto antes de empezar a implementar grandes partes.
+Estado actual de Etapa 1:
+La skill `skills/paes-importer/` y el importador local ya generan `draft.json`, `assets/` y `evidence/`. Development registra 5 `complete` / 3 `partial`, y el checkpoint Q10/Q19 se cerro en `4c244a0`. Ver [[PROJECT_CONTEXT#Resultados registrados de Etapa 1]] para las demas muestras.
 
 ## Estoy trabajando en
 
@@ -15,6 +15,8 @@ Checklist inicial:
 - [ ] Definir sistema de dominio por habilidad
 - [ ] Definir sistema adaptativo
 - [ ] Definir diagnostico inicial
+- [ ] Cerrar el contrato versionado de `draft.json` y ampliar la validacion de Etapa 1
+- [x] Crear estructura minima real de `skills/paes-importer/`
 
 ## Despues
 

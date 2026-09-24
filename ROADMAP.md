@@ -68,6 +68,8 @@ La propuesta actual es dejar Playground avanzado, Verificador, Scanner, predicci
 - [ ] Implementar autenticacion y navegacion principal
 - [ ] Crear base de datos, migraciones y permisos
 - [ ] Cargar un banco piloto de preguntas revisadas
+- [x] Implementar el pipeline base de Etapa 1 y ejecutar el benchmark inicial de 8 preguntas
+- [ ] Estabilizar y validar Etapa 1; el contrato versionado de `draft.json` sigue pendiente y nuevos holdouts pueden revelar problemas de generalizacion
 - [ ] Implementar pregunta -> respuesta -> explicacion -> historial
 - [ ] Implementar diagnostico, resumen y seleccion de siguiente practica
 - [ ] Implementar progreso y estadisticas iniciales sin falsa precision
@@ -75,6 +77,8 @@ La propuesta actual es dejar Playground avanzado, Verificador, Scanner, predicci
 - [ ] Probar reglas educativas, persistencia y recorrido completo durante la implementacion
 - [ ] Comprobar con dos usuarios que no puedan acceder a datos ajenos
 - [ ] Comprobar que recargas y reintentos no dupliquen el progreso
+
+Los resultados de las muestras de ocho preguntas estan en [[PROJECT_CONTEXT#Resultados registrados de Etapa 1]]. Holdout-v2 cubrio parcialmente Ensayo 326; el checkpoint Q10/Q19 quedo cerrado en `4c244a0`.
 
 **Resultado esperado:** un estudiante completa el ciclo, regresa y conserva correctamente su avance.
 

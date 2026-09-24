@@ -40,7 +40,7 @@ Reduce envio de material, coste y dependencia de servicios externos, y mantiene 
 
 ### Consecuencia
 
-La skill necesitara un adaptador minimo para la capacidad de vision o texto disponible en Codex, Claude Code, Gemini CLI u otro CLI. Si no hay capacidad adecuada, conservara el bloque como `unresolved` y registrara una incidencia. Procesamiento local no significa que un modelo remoto sea privado: cada uso debe quedar explicito.
+La skill usa un contrato de solicitud y respuesta para el CLI anfitrion, sin adaptadores separados por proveedor. Si no hay capacidad adecuada, conserva el bloque como `unresolved` y registra una incidencia. Procesamiento local no significa que un modelo remoto sea privado: cada uso debe quedar explicito.
 
 ### Estado
 
@@ -50,7 +50,7 @@ Aceptada
 
 ### Decision
 
-La ubicacion canonica interna inicial de la skill sera `skills/paes-importer/`. `pypdfium2` sera el renderizador principal para paginas y crops PNG. OCR sera opcional y se usara solo cuando la extraccion local lo requiera.
+La ubicacion canonica interna de la skill es `skills/paes-importer/`. `pypdfium2` es el renderizador principal para paginas y crops PNG. OCR permanece opcional y se reserva para cuando la extraccion local lo requiera.
 
 El procesamiento seguira local-first + AI-on-demand: primero herramientas locales; despues modelo del CLI del usuario solo para ambiguedades reales. Se enviaran crops o texto antes que paginas completas.
 
@@ -342,7 +342,7 @@ Resultados historicos (superados por la validacion de fidelidad descrita abajo):
 
 Ademas del consumo unico de objetos, complete requiere validacion de orden inline, tipo y relaciones de expresion. Una fraccion y un exponente consumidos por separado no prueban una expresion correcta. Los candidatos conectados no demostrados quedan como un unresolved atomico con source_ids, candidate_id, propuestas conservadas y solicitud AI-on-demand pendiente. No se llama a IA automaticamente ni se usa confianza del modelo para completar.
 
-La ruta generica incorpora structural_fidelity.py sin ramas por pregunta. Los tests de integracion ejecutan el CLI actual sobre ambos conjuntos; los tests oracle no certifican esta ruta. Resultados actuales: desarrollo 3 complete / 5 partial; regresion 6 complete / 2 partial. La reduccion de complete expone pendientes antes ocultos, no significa que se hayan reconstruido todas las formulas. Ver [[technical/STRUCTURAL_FIDELITY_REVIEW]]. No se ejecuta holdout-v2 ni el ensayo completo.
+La ruta generica incorpora structural_fidelity.py sin ramas por pregunta. Los tests de integracion ejecutan el CLI actual sobre ambos conjuntos; los tests oracle no certifican esta ruta. Resultados de esta validacion inicial: desarrollo 3 complete / 5 partial; regresion 6 complete / 2 partial. La reduccion de complete expone pendientes antes ocultos, no significa que se hayan reconstruido todas las formulas. Ver [[technical/STRUCTURAL_FIDELITY_REVIEW]]. En esta validacion no se ejecuto holdout-v2 ni el ensayo completo.
 
 ## Decision: aritmetica simple y AI-on-demand - 2026-09-17
 
@@ -350,4 +350,10 @@ Se amplia la ruta generica solo para aritmetica numerica inline y ecuaciones inl
 
 Los candidatos pendientes generan un crop minimo de evidencia. El CLI anfitrion recibe ese crop y una instruccion estricta, y devuelve schema/ai-response.schema.json. El aplicador valida candidate_id, propietario, source_ids exactos y tipo; registra cli, model, objetivo, evidencia y resultado en extraction.ai_interventions; sustituye solo el candidato y recalcula coverage, structural fidelity y status. La salida de IA nunca fuerza complete: si la fidelidad no queda demostrada, permanece partial.
 
-No se implementan adaptadores separados para Codex, Claude o AGY. No se procesan holdout-v2 ni 65 preguntas.
+No se implementan adaptadores separados para Codex, Claude o AGY. En esta iteracion no se procesaron holdout-v2 ni 65 preguntas.
+
+## Seguimiento de Etapa 1 - 2026-09-23
+
+La skill y el importador generico de Etapa 1 estan implementados. Las corridas registradas de ocho preguntas muestran: Development 5 `complete` / 3 `partial`; holdout-v1 6 / 2; holdout-v2 sobre Ensayo 326 1 / 7; Tesla 0 / 8; y Matematica (1) 1 / 7. Holdout-v2 fue una primera ejecucion parcial de ocho preguntas del ensayo de 65.
+
+En la corrida de Matematica (1), Q10 quedo `partial` y Q19 `complete`. El checkpoint Q10/Q19 se cerro en `4c244a0` y se publico en `origin/main`. La verificacion independiente de Etapa 2 y el enriquecimiento a `final.json` siguen pendientes.
