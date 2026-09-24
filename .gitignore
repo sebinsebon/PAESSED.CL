@@ -39,6 +39,7 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # Private educational inputs and generated exports
+Ensayos/
 private/
 local-data/
 student-data/
