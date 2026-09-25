@@ -14,9 +14,13 @@ from importlib.metadata import version as package_version
 from pathlib import Path
 
 import pypdfium2 as pdfium
-from jsonschema import validate
 from pdf_inspector import extract_text_with_positions
 from structural_fidelity import validate_and_order, fidelity_report
+from draft_contract import empty_text_rendering_ids, text_rendering_duplicates
+from draft_v1_emitter import (
+    assemble_v1, publish_verified, source_key, source_paths_from_manifest,
+    source_records, staging_directory,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 PDF_ROOT = ROOT.parent / "Ensayos"
@@ -83,17 +87,41 @@ def build_source_inventory(page_id: str, region_id: str, owner: str, items, obje
             entry["parent_id"] = item.parent_source_id
             entry["source_span"] = list(item.source_span)
             entry["kind"] = "text_span"
+        try:
+            font_size = float(getattr(item, "font_size", None))
+        except (TypeError, ValueError):
+            font_size = None
+        if font_size is not None and math.isfinite(font_size) and font_size > 0:
+            entry.setdefault("extensions", {})["paessed.source_font_size"] = font_size
         inventory.append(entry)
     for obj in objects:
         kind = ("visual" if obj.get("type") == "PdfImage" else "text_rendering" if obj.get("type") == "PdfTextObj" else "layout")
-        inventory.append({
+        entry = {
             "id": _source_id(obj, "object"),
             "region_id": region_id,
             "owner": owner,
             "kind": kind,
             "candidate_type": "visual" if kind == "visual" else "layout",
             "bbox": list(obj["bbox_ll"]),
-        })
+        }
+        try:
+            font_size = float(obj.get("font_size"))
+        except (TypeError, ValueError):
+            font_size = None
+        if kind == "text_rendering" and font_size is not None and math.isfinite(font_size) and font_size > 0:
+            extensions = {"paessed.effective_font_size": font_size}
+            for key, extension in (
+                ("font_size_declared", "paessed.pdfium_declared_font_size"),
+                ("font_size_vertical_scale", "paessed.pdfium_vertical_scale"),
+            ):
+                try:
+                    value = float(obj.get(key))
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(value) and value > 0:
+                    extensions[extension] = value
+            entry["extensions"] = extensions
+        inventory.append(entry)
     return inventory
 
 
@@ -168,7 +196,26 @@ def assess_source_coverage(
         )
         entry["consumers"] = list(consumers.get(entry["id"], []))
 
-    relevant = [entry for entry in inventory if entry.get("kind") != "text_rendering"]
+    duplicate_renderings = text_rendering_duplicates(inventory)
+    empty_renderings = empty_text_rendering_ids(inventory, duplicate_renderings)
+    for entry in inventory:
+        if entry.get("kind") != "text_rendering":
+            continue
+        extensions = entry.setdefault("extensions", {})
+        extensions.pop("paessed.duplicate_of", None)
+        if entry["id"] in duplicate_renderings:
+            extensions["paessed.duplicate_of"] = duplicate_renderings[entry["id"]]
+            extensions.pop("paessed.provenance_status", None)
+        elif entry["id"] in empty_renderings:
+            extensions["paessed.provenance_status"] = "empty_geometry"
+        else:
+            extensions.pop("paessed.provenance_status", None)
+        if not extensions:
+            entry.pop("extensions", None)
+
+    relevant = [entry for entry in inventory
+                if entry["id"] not in duplicate_renderings
+                and entry["id"] not in empty_renderings]
     uncovered = [entry["id"] for entry in relevant if counts.get(entry["id"], 0) == 0]
     duplicated = sorted(
         source_id for source_id, count in counts.items() if count > 1
@@ -862,6 +909,33 @@ def object_bbox_ll(obj) -> tuple[float, float, float, float] | None:
         return tuple(float(value) for value in values)
     except Exception:
         return None
+
+
+def pdfium_font_metrics(obj) -> tuple[float, float, float] | None:
+    """Return (effective size, declared size, vertical matrix scale).
+
+    PDFium exposes the declared text font size separately from the object
+    matrix. PDFs that encode glyphs at a 1-unit font size rely on that matrix
+    for their rendered size, so compare the vertical matrix scale to the
+    extracted text's font size.
+    """
+    try:
+        font_size = float(obj.get_font_size())
+        matrix = obj.get_matrix()
+        vertical_scale = math.hypot(float(matrix.c), float(matrix.d))
+        effective = font_size * vertical_scale
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        return None
+    if (not math.isfinite(font_size) or font_size <= 0
+            or not math.isfinite(vertical_scale) or vertical_scale < 0.1
+            or not math.isfinite(effective) or effective <= 0):
+        return None
+    return effective, font_size, vertical_scale
+
+
+def pdfium_effective_font_size(obj) -> float | None:
+    metrics = pdfium_font_metrics(obj)
+    return metrics[0] if metrics is not None else None
 
 
 def bbox_tl(bounds_ll, height: float) -> list[float]:
@@ -1888,21 +1962,17 @@ def determine_extraction_status(
     return "complete"
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-
-    output = args.output.resolve()
+def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> dict:
+    _SOURCE_IDS.clear()
     crop_dir = output / "evidence" / "crops"
     asset_dir = output / "assets"
     crop_dir.mkdir(parents=True, exist_ok=True)
     asset_dir.mkdir(parents=True, exist_ok=True)
-    cases = json.loads(args.cases.read_text(encoding="utf-8"))["cases"]
-    grouped: dict[int, list[dict]] = {}
+    cases = json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
+    grouped: dict[str, list[dict]] = {}
     for case in cases:
-        grouped.setdefault(int(case["year"]), []).append(case)
+        grouped.setdefault(source_key(case), []).append(case)
+    sources = source_records(grouped, paths, sha256)
 
     pages: list[dict] = []
     regions: list[dict] = []
@@ -1914,7 +1984,7 @@ def main() -> None:
     raw: dict[str, dict] = {}
 
     for year, year_cases in grouped.items():
-        source = PDFS[year]
+        source = paths[year]
         if not source.exists():
             raise SystemExit(f"Missing source PDF: {source}")
         pdf = pdfium.PdfDocument(str(source))
@@ -1942,7 +2012,14 @@ def main() -> None:
             for obj in page.get_objects():
                 bounds = object_bbox_ll(obj)
                 if bounds is not None:
-                    objects.append({"type": type(obj).__name__, "bbox_ll": bounds})
+                    record = {"type": type(obj).__name__, "bbox_ll": bounds}
+                    if record["type"] == "PdfTextObj":
+                        font_metrics = pdfium_font_metrics(obj)
+                        if font_metrics is not None:
+                            record["font_size"] = font_metrics[0]
+                            record["font_size_declared"] = font_metrics[1]
+                            record["font_size_vertical_scale"] = font_metrics[2]
+                    objects.append(record)
             page_id = f"{year}-p{page_no}"
             assign_source_ids(page_id, items, objects)
             raw_items = list(items)
@@ -1977,6 +2054,7 @@ def main() -> None:
             page_id = f"{year}-p{page_no}"
             pages.append({
                 "id": page_id,
+                "source_id": year,
                 "page_number": page_no,
                 "width": page_width,
                 "height": page_height,
@@ -2198,6 +2276,23 @@ def main() -> None:
                         )
                     ],
                 ]
+                question_number_source_id = _source_id(marker, "text")
+                marker_extensions = {"paessed.metadata_role": "question_number"}
+                try:
+                    marker_font_size = float(getattr(marker, "font_size", None))
+                except (TypeError, ValueError):
+                    marker_font_size = None
+                if marker_font_size is not None and math.isfinite(marker_font_size) and marker_font_size > 0:
+                    marker_extensions["paessed.source_font_size"] = marker_font_size
+                source_inventory.append({
+                    "id": question_number_source_id,
+                    "region_id": region_id,
+                    "owner": "question_number",
+                    "kind": "text",
+                    "candidate_type": "text",
+                    "bbox": list(_item_bbox(marker)),
+                    "extensions": marker_extensions,
+                })
                 source_objects.extend(source_inventory)
                 def mark_candidates(block):
                     if block["type"] == "math" or block.get("candidate_type") == "math":
@@ -2212,10 +2307,15 @@ def main() -> None:
                                     mark_candidates(child)
                 for block in flat_blocks:
                     mark_candidates(block)
+                coverage_owners = {option["id"]: option for option in options}
+                coverage_owners["question-number"] = {
+                    "owner": "question_number",
+                    "source_ids": [question_number_source_id],
+                }
                 coverage = assess_source_coverage(
                     source_inventory,
                     flat_blocks,
-                    owners={option["id"]: option for option in options},
+                    owners=coverage_owners,
                 )
                 if coverage["uncovered"]:
                     for entry in source_inventory:
@@ -2252,7 +2352,7 @@ def main() -> None:
                     coverage = assess_source_coverage(
                         source_inventory,
                         flat_blocks,
-                        owners={option["id"]: option for option in options},
+                        owners=coverage_owners,
                     )
                     issues.append({
                         "id": f"issue-{case['id']}-coverage-gap",
@@ -2309,6 +2409,9 @@ def main() -> None:
                 questions.append({
                     "id": case["id"],
                     "original_number": str(case["question"]),
+                    "extensions": {
+                        "paessed.question_number_source_ids": [question_number_source_id]
+                    },
                     "region_ids": [region_id],
                     "context_ids": [],
                     "stem": stem,
@@ -2328,16 +2431,8 @@ def main() -> None:
     (raw_dir / "extraction.raw.json").write_text(
         json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    draft = {
-        "schema_version": "0.1.0",
-        "document": {
-            "source_path": "local benchmark PDFs; not copied",
-            "sha256": {str(year): sha256(PDFS[year]) for year in grouped},
-            "page_count": {
-                str(year): len(pdfium.PdfDocument(str(PDFS[year])))
-                for year in grouped
-            },
-        },
+    reconstructed = {
+        "schema_version": "1.0.0",
         "extraction": {
             "status": "partial",
             "tools": {
@@ -2359,22 +2454,37 @@ def main() -> None:
         "unassigned_fragments": [],
         "issues": issues,
     }
-    schema = json.loads(
-        (ROOT / "skills/paes-importer/schema/draft.schema.json").read_text(encoding="utf-8")
+    draft = assemble_v1(
+        reconstructed, sources=sources, selection_sha256=sha256(cases_path),
+        artifact_root=output, sha256_file=sha256,
     )
-    validate(draft, schema)
     (output / "draft.json").write_text(
         json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(json.dumps({
+    return {
         "questions": len(questions),
         "pages": len(pages),
         "regions": len(regions),
         "assets": len(assets),
         "evidence_crops": len(evidence),
-        "issues": len(issues),
-        "output": str(output),
-    }, ensure_ascii=False))
+        "issues": len(draft["issues"]),
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cases", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--sources", type=Path,
+                        help="JSON map from source key to a known local PDF path")
+    args = parser.parse_args()
+    paths = (source_paths_from_manifest(args.sources) if args.sources else
+             {str(key): path for key, path in PDFS.items()})
+    target = args.output.absolute()
+    with staging_directory(target) as stage:
+        result = generate_draft(args.cases, stage, paths)
+        publish_verified(stage, target)
+    print(json.dumps({**result, "output": str(target)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

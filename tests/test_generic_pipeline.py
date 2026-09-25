@@ -131,6 +131,171 @@ class GenericPipelineTests(unittest.TestCase):
         ])
         self.assertTrue(all(entry["owner"] == "stem" for entry in inventory))
 
+    def test_text_rendering_with_matching_text_geometry_is_audited_as_duplicate(self):
+        text_item = item("fragmento", 100, 400, 40, 12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (100, 400, 140, 412),
+                     "font_size": 10}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+        text_id = importer._source_id(text_item)
+        rendering_id = importer._source_id(rendering)
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem", "source_ids": [text_id]}],
+        )
+
+        self.assertTrue(coverage["complete"])
+        rendered = next(entry for entry in inventory if entry["id"] == rendering_id)
+        self.assertEqual(rendered["extensions"]["paessed.duplicate_of"], [text_id])
+
+    def test_unmatched_text_rendering_remains_required_for_source_coverage(self):
+        text_item = item("fragmento", 100, 400, 40, 12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (180, 400, 190, 412),
+                     "font_size": 10}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+        rendering_id = importer._source_id(rendering)
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem",
+              "source_ids": [importer._source_id(text_item)]}],
+        )
+
+        self.assertFalse(coverage["complete"])
+        self.assertEqual(coverage["uncovered"], [rendering_id])
+
+    def test_geometric_overlap_with_a_smaller_font_is_not_a_text_duplicate(self):
+        text_item = item("x", 100, 400, 8, 12, font_size=12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (100, 400, 108, 412),
+                     "font_size": 6}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+        rendering_id = importer._source_id(rendering)
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem",
+              "source_ids": [importer._source_id(text_item)]}],
+        )
+
+        self.assertFalse(coverage["complete"])
+        self.assertEqual(coverage["uncovered"], [rendering_id])
+
+    def test_pdfium_font_size_uses_the_object_transform_matrix(self):
+        class PdfiumTextObject:
+            def get_font_size(self):
+                return 1
+
+            def get_matrix(self):
+                return SimpleNamespace(a=24, b=0, c=0, d=12)
+
+        self.assertEqual(importer.pdfium_effective_font_size(PdfiumTextObject()), 12)
+
+    def test_pdfium_font_size_rejects_near_zero_vertical_scale(self):
+        class PdfiumTextObject:
+            def get_font_size(self):
+                return 1
+
+            def get_matrix(self):
+                return SimpleNamespace(a=10, b=0, c=0, d=0.05)
+
+        self.assertIsNone(importer.pdfium_effective_font_size(PdfiumTextObject()))
+
+    def test_geometric_overlap_with_a_25_percent_smaller_font_is_not_duplicate(self):
+        text_item = item("x", 100, 400, 8, 12, font_size=12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (100, 400, 108, 412),
+                     "font_size": 9}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem",
+              "source_ids": [importer._source_id(text_item)]}],
+        )
+
+        self.assertFalse(coverage["complete"])
+        self.assertEqual(coverage["uncovered"], [importer._source_id(rendering)])
+
+    def test_extractor_size_variation_within_tolerance_remains_duplicate(self):
+        text_item = item("x", 100, 400, 8, 12, font_size=12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (100, 400, 108, 412),
+                     "font_size": 14.346}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem",
+              "source_ids": [importer._source_id(text_item)]}],
+        )
+
+        self.assertTrue(coverage["complete"])
+
+    def test_degenerate_glyph_geometry_can_match_an_extracted_text_source(self):
+        text_item = item("número", 100, 400, 40, 12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (112, 405, 112, 405),
+                     "font_size": 10}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+        text_id = importer._source_id(text_item)
+        rendering_id = importer._source_id(rendering)
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem", "source_ids": [text_id]}],
+        )
+
+        self.assertTrue(coverage["complete"])
+        rendered = next(entry for entry in inventory if entry["id"] == rendering_id)
+        self.assertEqual(rendered["extensions"]["paessed.duplicate_of"], [text_id])
+
+    def test_unmatched_degenerate_math_object_remains_semantically_required(self):
+        text_item = item("2 + 3", 100, 400, 40, 12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (112, 405, 112, 405),
+                     "font_size": 10}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+        inventory[0]["candidate_type"] = "math"
+        rendering_id = importer._source_id(rendering)
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "math", "owner": "stem",
+              "source_ids": [importer._source_id(text_item)]}],
+        )
+
+        self.assertFalse(coverage["complete"])
+        self.assertEqual(coverage["uncovered"], [rendering_id])
+
+    def test_degenerate_unassociated_rendering_is_retained_with_empty_geometry_status(self):
+        text_item = item("fragmento", 100, 400, 40, 12)
+        rendering = {"type": "PdfTextObj", "bbox_ll": (180, 500, 180, 500)}
+        inventory = importer.build_source_inventory(
+            "p", "region-q", "stem", [text_item], [rendering]
+        )
+        rendering_id = importer._source_id(rendering)
+
+        coverage = importer.assess_source_coverage(
+            inventory,
+            [{"type": "text", "owner": "stem",
+              "source_ids": [importer._source_id(text_item)]}],
+        )
+
+        self.assertTrue(coverage["complete"])
+        retained = next(entry for entry in inventory if entry["id"] == rendering_id)
+        self.assertEqual(retained["kind"], "text_rendering")
+        self.assertEqual(retained["extensions"]["paessed.provenance_status"], "empty_geometry")
+
     def test_coverage_rejects_unrepresented_pdf_image(self):
         coverage = importer.assess_source_coverage(
             [{"id": "p:object:0", "kind": "visual", "owner": "stem"}],
