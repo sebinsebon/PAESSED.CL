@@ -1124,6 +1124,75 @@ def bbox_tl(bounds_ll, height: float) -> list[float]:
     return [round(x0, 2), round(height - y1, 2), round(x1, 2), round(height - y0, 2)]
 
 
+def question_boundary_candidates(anchor, items):
+    """Classify lower numeric fragments relative to a known question anchor.
+
+    Page/column-local geometry is primary. Numbering is only supporting evidence;
+    uncertainty never silently truncates the question. No new pages are read.
+    """
+    accepted, ambiguous = [], []
+    ax = float(anchor.x)
+    tolerance = QUESTION_MARKER_LEFT_TOLERANCE
+    candidates = sorted((v for v in items if v is not anchor
+                         and (QUESTION_RE.fullmatch(v.text.strip()) or QUESTION_PREFIX_RE.match(v.text.strip()))
+                         and float(v.y) < float(anchor.y)), key=lambda v: (-float(v.y), float(v.x)))
+    for candidate in candidates:
+        box = _item_bbox(candidate)
+        if not QUESTION_RE.fullmatch(candidate.text.strip()):
+            # An unsplit inline heading may belong to another column.
+            ambiguous.append(candidate)
+            continue
+        # A number at the end of a line (including A) 44.) is body content.
+        left_neighbors = [v for v in items if v is not candidate
+                          and 0 <= box[0] - float(v.x + v.width) <= max(24.0, 3 * float(candidate.height))
+                          and min(float(v.y + v.height), box[3]) - max(float(v.y), box[1])
+                          >= min(float(v.height), float(candidate.height)) * 0.5]
+        if left_neighbors:
+            continue
+        aligned = abs(float(candidate.x) - ax) <= tolerance
+        options = [v for v in items if OPTION_RE.fullmatch(v.text.strip())
+                   and ax - tolerance <= float(v.x) <= ax + 80
+                   and float(candidate.y) < float(v.y) < float(anchor.y)]
+        preceding = max(options, key=lambda v: -float(v.y)) if options else None
+        # Indented continuation values are owned by the preceding answer band.
+        # A prose-bearing fragment could instead start another column: defer it.
+        right_context = [v for v in items if v is not candidate
+                         and box[2] <= float(v.x) <= box[2] + 80
+                         and abs(float(v.y) - float(candidate.y)) <= max(float(candidate.height), float(v.height))
+                         and (UNICODE_LETTER_RUN_RE.search(v.text) or IMAGE_MARKER_RE.fullmatch(v.text.strip()))]
+        if not aligned:
+            if (preceding is not None and not right_context
+                    and float(preceding.x + preceding.width) <= float(candidate.x)
+                    <= float(preceding.x) + max(80.0, 6 * float(preceding.height))):
+                continue
+            ambiguous.append(candidate)
+            continue
+        # When question and answer margins coincide, an incomplete answer group
+        # cannot prove the next numbered line is a new question.
+        if preceding is not None and abs(float(preceding.x) - ax) <= tolerance:
+            labels = {v.text.strip() for v in options}
+            if labels != {"A)", "B)", "C)", "D)"}:
+                ambiguous.append(candidate)
+                continue
+        number = int(candidate.text.strip()[:-1])
+        anchor_number = int(anchor.text.strip()[:-1])
+        introducers = [v for v in items if v.text.rstrip().endswith(":")
+                       and 0 < float(v.y) - box[3] <= 3 * max(float(v.height), float(candidate.height))
+                       and abs(float(v.x) - ax) <= 80]
+        if number <= anchor_number or introducers:
+            ambiguous.append(candidate)
+            continue
+        sequential = number == anchor_number + 1
+        # Alignment plus nearby stem content can support nonconsecutive headings.
+        # Sequential numbering alone is never sufficient.
+        separated = float(anchor.y) - box[3] > max(float(anchor.height), float(candidate.height))
+        if right_context and (separated or sequential):
+            accepted.append(candidate)
+            break
+        ambiguous.append(candidate)
+    return accepted, ambiguous
+
+
 def overlaps_vertical(bounds_ll, lower: float, upper: float) -> bool:
     return bounds_ll[3] > lower and bounds_ll[1] < upper
 
@@ -2344,12 +2413,8 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                 )
                 if marker is None:
                     raise SystemExit(f"Question marker not found: {case['id']}")
-                marker_index = question_markers.index(marker)
-                next_marker = (
-                    question_markers[marker_index + 1]
-                    if marker_index + 1 < len(question_markers)
-                    else None
-                )
+                boundaries, uncertain_boundaries = question_boundary_candidates(marker, items)
+                next_marker = boundaries[0] if boundaries else None
                 lower = (
                     float(next_marker.y + next_marker.height + 3.0)
                     if next_marker
@@ -2394,6 +2459,15 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                     "transform": [2, 0, 0, 2, round(-2 * region[0], 3), round(-2 * region[1], 3)],
                 })
                 evidence_id = f"evidence-{case['id']}"
+                if uncertain_boundaries:
+                    issues.append({
+                        "id": f"issue-{case['id']}-question-boundary",
+                        "code": "AMBIGUOUS_QUESTION_BOUNDARY",
+                        "severity": "warning", "target_id": case["id"],
+                        "region_ids": [region_id], "evidence_ids": [evidence_id],
+                        "blocks_completion": True,
+                        "message": "Numeric fragments lack sufficient column or answer-context evidence to delimit a question.",
+                    })
                 question_crop = render_slice(
                     page, crop_dir, case["id"], region, page_width, page_height
                 )
