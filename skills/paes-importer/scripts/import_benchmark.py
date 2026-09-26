@@ -16,6 +16,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from pdf_inspector import extract_text_with_positions
 from structural_fidelity import validate_and_order, fidelity_report
+from simple_fractions import simple_fraction_groups
 from draft_contract import empty_text_rendering_ids, text_rendering_duplicates
 from draft_v1_emitter import (
     assemble_v1, publish_verified, source_key, source_paths_from_manifest,
@@ -121,6 +122,12 @@ def build_source_inventory(page_id: str, region_id: str, owner: str, items, obje
                 if math.isfinite(value) and value > 0:
                     extensions[extension] = value
             entry["extensions"] = extensions
+        metadata = {key: obj[key] for key in (
+            "pdfium_text", "pdfium_matrix", "pdfium_page_rotation", "pdfium_nesting_level",
+            "pdfium_page_number", "pdfium_bbox_ll", "simple_fraction_proof"
+        ) if key in obj}
+        if metadata:
+            entry.setdefault("extensions", {})["paessed.pdfium_geometry"] = metadata
         inventory.append(entry)
     return inventory
 
@@ -610,6 +617,16 @@ def infer_math_display(members, all_items) -> bool:
     return True
 
 
+def _simple_fraction_proof(group, owner, previous_owners=None):
+    return {
+        "method": "unique_text_font_origin_and_isolated_glyph_geometry_v1",
+        "text_ids": [_source_id(i, "text") for i in group["items"]],
+        "glyph_ids": [_source_id(o, "object") for o in group["glyphs"]],
+        "owner": owner,
+        "previous_glyph_owners": previous_owners or [owner, owner],
+    }
+
+
 def detect_math_candidates(items, objects, owner: str | None = None) -> list[dict]:
     """Detect positional math candidates and retain every source object."""
     candidates: list[dict] = []
@@ -639,7 +656,25 @@ def detect_math_candidates(items, objects, owner: str | None = None) -> list[dic
         used_objects.update(object_ids)
         return True
 
+    item_by_id = {_source_id(item, "text"): item for item in items}
+    object_by_id = {_source_id(obj, "object"): obj for obj in objects}
+    if owner == "stem":
+        for group in simple_fraction_groups(items, objects):
+            group["bar"]["simple_fraction_proof"] = _simple_fraction_proof(group, owner)
     for rule in _horizontal_rules(objects):
+        proof = rule.get("simple_fraction_proof")
+        if proof:
+            if (proof["owner"] == owner
+                    and all(ref in item_by_id for ref in proof["text_ids"])
+                    and all(ref in object_by_id for ref in proof["glyph_ids"])):
+                members = [item_by_id[ref] for ref in proof["text_ids"]]
+                glyphs = [object_by_id[ref] for ref in proof["glyph_ids"]]
+                add_candidate(
+                    "fraction", members, [rule, *glyphs],
+                    rf"\frac{{{members[0].text.strip()}}}{{{members[1].text.strip()}}}",
+                    _bbox_union([rule["bbox_ll"], *(g["bbox_ll"] for g in glyphs)]),
+                )
+            continue
         bar = tuple(rule["bbox_ll"])
         above = _expand_math_line(
             items, bar, _nearest_math_line(
@@ -1369,6 +1404,8 @@ def option_for_items(
 
 def assign_exclusive_option_members(selected_items, selected_objects, option_markers):
     """Assign content to one owner using a local spatial partition."""
+    for obj in selected_objects:
+        obj.pop("simple_fraction_proof", None)
     members = {OPTION_RE.fullmatch(marker.text.strip()).group(1): [] for marker in option_markers}
     object_members = {label: [] for label in members}
     if not option_markers:
@@ -1463,6 +1500,34 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
             ambiguous.append(obj)
         else:
             object_members[label].append(obj)
+    # Require agreement of both tokens and the bar before transferring glyphs.
+    for group in simple_fraction_groups(selected_items, selected_objects):
+        token_labels = [next((label for label, values in members.items()
+                              if any(item is value for value in values)), None)
+                        for item in group["items"]]
+        bar_label = next((label for label, values in object_members.items()
+                          if any(group["bar"] is value for value in values)), None)
+        if len(set([*token_labels, bar_label])) != 1 or bar_label is None:
+            continue
+        prior_labels = [next((label for label, values in object_members.items()
+                              if any(glyph is value for value in values)), None)
+                        for glyph in group["glyphs"]]
+        if any(label != bar_label and not (
+                label is None and any(glyph is value for value in ambiguous))
+               for glyph, label in zip(group["glyphs"], prior_labels)):
+            continue
+        for glyph in group["glyphs"]:
+            for label in object_members:
+                object_members[label] = [o for o in object_members[label] if o is not glyph]
+            ambiguous = [o for o in ambiguous if o is not glyph]
+            object_members[bar_label].append(glyph)
+        group["bar"]["simple_fraction_proof"] = _simple_fraction_proof(
+            group, f"option:{bar_label}",
+            [f"option:{label}" if label else "ambiguous" for label in prior_labels],
+        )
+    original_order = {id(obj): index for index, obj in enumerate(selected_objects)}
+    for values in object_members.values():
+        values.sort(key=lambda obj: original_order[id(obj)])
     return members, object_members, ambiguous
 
 
@@ -2390,10 +2455,22 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
             page = pdf[page_no - 1]
             page_sizes[page_no] = tuple(map(float, page.get_size()))
             page_objects = []
+            textpage = page.get_textpage() if hasattr(page, "get_textpage") else None
             for obj in page.get_objects():
                 bounds = object_bbox_ll(obj)
                 if bounds is not None:
-                    record = {"type": type(obj).__name__, "bbox_ll": bounds}
+                    record = {"type": type(obj).__name__, "bbox_ll": bounds,
+                              "pdfium_bbox_ll": list(bounds), "pdfium_page_number": page_no,
+                              "pdfium_nesting_level": getattr(obj, "level", None)}
+                    try:
+                        matrix = obj.get_matrix()
+                        record["pdfium_matrix"] = [float(getattr(matrix, k)) for k in "abcdef"]
+                        record["pdfium_page_rotation"] = page.get_rotation()
+                        if record["type"] == "PdfTextObj" and textpage is not None:
+                            obj.textpage = textpage
+                            record["pdfium_text"] = obj.extract()
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
+                        pass  # Missing optional proof leaves the original object intact.
                     if record["type"] == "PdfTextObj":
                         font_metrics = pdfium_font_metrics(obj)
                         if font_metrics is not None:
@@ -2401,6 +2478,8 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                             record["font_size_declared"] = font_metrics[1]
                             record["font_size_vertical_scale"] = font_metrics[2]
                     page_objects.append(record)
+            if textpage is not None:
+                textpage.close()
             page_objects_by_page[page_no] = page_objects
         repeated_footers = identify_repeated_page_footers(
             by_page, page_sizes, page_objects_by_page
@@ -2445,6 +2524,7 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                 ],
                 "objects": [
                     {
+                        **item,
                         "type": item["type"],
                         "source_id": _source_id(item, "object"),
                         "bbox_ll": [round(value, 3) for value in item["bbox_ll"]],
