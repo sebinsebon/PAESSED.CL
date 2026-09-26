@@ -25,6 +25,91 @@ class GenericPipelineTests(unittest.TestCase):
     def setUp(self):
         importer._SOURCE_IDS.clear()
 
+    def test_repeated_bottom_center_unicode_page_numbers_are_document_furniture(self):
+        pages = {
+            12: [item("\u2013 10 \u2013", 280.18, 17.67, 34.9, 12)],
+            22: [item("\u2013 20 \u2013", 280.18, 17.67, 34.9, 12)],
+            29: [item("\u2013 27 \u2013", 280.18, 17.67, 34.9, 12)],
+            48: [item("\u2013 46 \u2013", 280.18, 17.67, 34.9, 12)],
+        }
+        sizes = {page: (594.96, 841.92) for page in pages}
+
+        detected = importer.identify_repeated_page_footers(pages, sizes)
+
+        self.assertEqual({page: len(items) for page, items in detected.items()}, {
+            12: 1, 22: 1, 29: 1, 48: 1,
+        })
+
+    def test_dash_number_in_option_body_is_not_page_furniture(self):
+        pages = {
+            12: [item("\u2013 10 \u2013", 100, 300, 34.9, 12)],
+            22: [item("\u2013 20 \u2013", 100, 300, 34.9, 12)],
+            29: [item("\u2013 27 \u2013", 100, 300, 34.9, 12)],
+        }
+        sizes = {page: (594.96, 841.92) for page in pages}
+
+        detected = importer.identify_repeated_page_footers(pages, sizes)
+
+        self.assertEqual(detected, {})
+
+    def test_bottom_center_dash_numbers_need_consistent_page_sequence(self):
+        pages = {
+            12: [item("\u2013 10 \u2013", 280.18, 17.67, 34.9, 12)],
+            22: [item("\u2013 20 \u2013", 280.18, 17.67, 34.9, 12)],
+            29: [item("\u2013 28 \u2013", 280.18, 17.67, 34.9, 12)],
+        }
+        sizes = {page: (594.96, 841.92) for page in pages}
+
+        detected = importer.identify_repeated_page_footers(pages, sizes)
+
+        self.assertEqual(detected, {})
+
+    def test_bottom_center_dash_number_near_option_marker_remains_content(self):
+        pages = {
+            page: [
+                item(f"\u2013 {page - 2} \u2013", 280.18, 17.67, 34.9, 12),
+                item("D)", 90, 50, 12, 12),
+            ]
+            for page in (12, 22, 29)
+        }
+        sizes = {page: (594.96, 841.92) for page in pages}
+
+        detected = importer.identify_repeated_page_footers(pages, sizes)
+
+        self.assertEqual(detected, {})
+
+    def test_page_footer_can_be_separated_from_last_option_marker(self):
+        pages = {
+            page: [
+                item(f"\u2013 {page - 2} \u2013", 280.18, 17.67, 34.9, 12),
+                item("D)", 90, 64, 12, 12),
+            ]
+            for page in (12, 22, 29)
+        }
+        sizes = {page: (594.96, 841.92) for page in pages}
+
+        detected = importer.identify_repeated_page_footers(pages, sizes)
+
+        self.assertEqual({page: len(items) for page, items in detected.items()}, {
+            12: 1, 22: 1, 29: 1,
+        })
+
+    def test_development_footer_geometry_allows_34_point_marker_gap(self):
+        pages = {
+            page: [
+                item(f"- {page} -", 290.414, 42.539, 25.508, 14.346),
+                item("D)", 90, 90.993, 12, 11.955),
+            ]
+            for page in (3, 4, 5)
+        }
+        sizes = {page: (612.0, 792.0) for page in pages}
+
+        detected = importer.identify_repeated_page_footers(pages, sizes)
+
+        self.assertEqual({page: len(items) for page, items in detected.items()}, {
+            3: 1, 4: 1, 5: 1,
+        })
+
     def test_unreconstructed_dot_operator_cannot_pass_fidelity(self):
         for operator in ("\u22c5", "\u00b7"):
             with self.subTest(operator=operator):

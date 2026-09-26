@@ -34,7 +34,7 @@ OPTION_PREFIX_RE = re.compile(r"^([A-D])\)(?=\s+\S)")
 QUESTION_RE = re.compile(r"^(\d+)\.$")
 QUESTION_PREFIX_RE = re.compile(r"^(\d+)\.(?=\s+\S)")
 QUESTION_MARKER_LEFT_TOLERANCE = 12.0
-FOOTER_RE = re.compile(r"^-\s*\d+\s*-$")
+FOOTER_RE = re.compile(r"^[-\u2010-\u2015\u2212]+\s*(\d+)\s*[-\u2010-\u2015\u2212]+$")
 MATHISH_RE = re.compile(r"^[0-9\s\u2212+\-().\u00b7*/]+$")
 
 IMAGE_MARKER_RE = re.compile(r"^\[Image:\s*(Im\d+)\]$")
@@ -901,6 +901,154 @@ def text_bbox_ll(item) -> tuple[float, float, float, float]:
         float(item.x + item.width),
         float(item.y + item.height),
     )
+
+
+def is_footer_text_rendering(footer_box: tuple[float, float, float, float], obj: dict) -> bool:
+    if obj.get("type") != "PdfTextObj":
+        return False
+    bounds = obj.get("bbox_ll")
+    if not bounds:
+        return False
+    obj_box = tuple(map(float, bounds))
+    footer_height = footer_box[3] - footer_box[1]
+    obj_height = obj_box[3] - obj_box[1]
+    vertical_gap = max(footer_box[1] - obj_box[3], obj_box[1] - footer_box[3], 0.0)
+    obj_width = max(0.0, obj_box[2] - obj_box[0])
+    horizontal_overlap = max(
+        0.0, min(footer_box[2], obj_box[2]) - max(footer_box[0], obj_box[0])
+    )
+    horizontally_aligned = (
+        footer_box[0] - 1.0 <= obj_box[0] <= footer_box[2] + 1.0
+        if obj_width == 0.0
+        else horizontal_overlap >= obj_width * 0.5
+    )
+    return (
+        horizontally_aligned
+        and vertical_gap <= min(3.0, footer_height * 0.25)
+        and obj_height <= max(18.0, footer_height * 1.5)
+    )
+
+
+def repeated_footer_floor(item, objects: list[dict]) -> float:
+    footer_box = text_bbox_ll(item)
+    floor = footer_box[3] + 5.0
+    for obj in objects:
+        bounds = obj.get("bbox_ll")
+        if bounds and is_footer_text_rendering(footer_box, obj):
+            floor = max(floor, float(bounds[3]) + 5.0)
+    return floor
+
+
+def identify_repeated_page_footers(
+    items_by_page: dict[int, list],
+    page_sizes: dict[int, tuple[float, float]],
+    objects_by_page: dict[int, list[dict]] | None = None,
+) -> dict[int, list]:
+    """Identify repeated page numbers from their text, position, and sequence.
+
+    A dash-wrapped number is treated as page furniture only when it appears
+    centered in the bottom margin on at least three sampled pages, with a
+    stable baseline, clear separation from question/option content, no other
+    layout object below the proposed cutoff, and a consistent offset from the
+    physical page number. This keeps isolated numeric expressions and visual
+    content in question regions.
+    """
+    by_page_offset: dict[int, list[tuple[int, object, float, float]]] = {}
+    for page_number, items in items_by_page.items():
+        size = page_sizes.get(page_number)
+        if not size:
+            continue
+        page_width, page_height = map(float, size)
+        if page_width <= 0 or page_height <= 0:
+            continue
+        for item in items:
+            match = FOOTER_RE.fullmatch(
+                unicodedata.normalize("NFC", str(item.text)).strip()
+            )
+            if not match:
+                continue
+            x0, y0, x1, y1 = text_bbox_ll(item)
+            width = x1 - x0
+            height = y1 - y0
+            center_x = (x0 + x1) / 2
+            if (
+                abs(center_x - page_width / 2) > page_width * 0.07
+                or width > page_width * 0.16
+                or y0 > page_height * 0.055
+                or y1 > page_height * 0.085
+                or height > page_height * 0.035
+            ):
+                continue
+            footer_box = (x0, y0, x1, y1)
+            clear_body_gap = max(12.0, height * 1.25)
+            clear_marker_gap = max(30.0, height * 2.0)
+            content_conflict = False
+            for other in items:
+                if other is item:
+                    continue
+                other_text = unicodedata.normalize("NFC", str(other.text)).strip()
+                if FOOTER_RE.fullmatch(other_text):
+                    continue
+                other_box = text_bbox_ll(other)
+                if other_box[1] >= footer_box[3]:
+                    vertical_gap = other_box[1] - footer_box[3]
+                elif footer_box[1] >= other_box[3]:
+                    vertical_gap = footer_box[1] - other_box[3]
+                else:
+                    vertical_gap = 0.0
+                is_question_or_option_marker = bool(
+                    QUESTION_RE.fullmatch(other_text)
+                    or OPTION_RE.fullmatch(other_text)
+                )
+                required_gap = (
+                    clear_marker_gap if is_question_or_option_marker
+                    else clear_body_gap
+                )
+                if vertical_gap < required_gap:
+                    content_conflict = True
+                    break
+            if content_conflict:
+                continue
+            page_objects = (objects_by_page or {}).get(int(page_number), [])
+            original_footer_floor = footer_box[3] + 5.0
+            expanded_footer_floor = repeated_footer_floor(item, page_objects)
+            for obj in page_objects:
+                obj_box = obj.get("bbox_ll")
+                if not obj_box:
+                    continue
+                obj_box = tuple(map(float, obj_box))
+                if is_footer_text_rendering(footer_box, obj):
+                    continue
+                reaches_footer_margin = (
+                    float(obj_box[1]) <= expanded_footer_floor
+                    and float(obj_box[3]) >= original_footer_floor
+                )
+                if float(obj_box[3]) <= original_footer_floor or reaches_footer_margin:
+                    content_conflict = True
+                    break
+            if content_conflict:
+                continue
+            printed_number = int(match.group(1))
+            by_page_offset.setdefault(printed_number - int(page_number), []).append(
+                (int(page_number), item, center_x / page_width, y0 / page_height)
+            )
+
+    detected: dict[int, list] = {}
+    for records in by_page_offset.values():
+        if len({record[0] for record in records}) < 3:
+            continue
+        median_x = sorted(record[2] for record in records)[len(records) // 2]
+        median_y = sorted(record[3] for record in records)[len(records) // 2]
+        aligned = [
+            record for record in records
+            if abs(record[2] - median_x) <= 0.03
+            and abs(record[3] - median_y) <= 0.015
+        ]
+        if len({record[0] for record in aligned}) < 3:
+            continue
+        for page_number, item, _, _ in aligned:
+            detected.setdefault(page_number, []).append(item)
+    return detected
 
 
 def object_bbox_ll(obj) -> tuple[float, float, float, float] | None:
@@ -1994,21 +2142,12 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
         for item in positioned:
             by_page.setdefault(int(item.page), []).append(item)
 
-        raw[str(year)] = {}
+        page_sizes = {}
+        page_objects_by_page = {}
         for page_no in page_numbers:
             page = pdf[page_no - 1]
-            page_width, page_height = map(float, page.get_size())
-            items = by_page[page_no]
-            question_markers = sorted(
-                [item for item in items if QUESTION_RE.fullmatch(item.text.strip())],
-                key=lambda item: (-float(item.y), float(item.x)),
-            )
-            footer_items = [item for item in items if FOOTER_RE.fullmatch(item.text.strip())]
-            footer_floor = min(
-                (float(item.y) + float(item.height) + 5.0 for item in footer_items),
-                default=0.0,
-            )
-            objects = []
+            page_sizes[page_no] = tuple(map(float, page.get_size()))
+            page_objects = []
             for obj in page.get_objects():
                 bounds = object_bbox_ll(obj)
                 if bounds is not None:
@@ -2019,7 +2158,27 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                             record["font_size"] = font_metrics[0]
                             record["font_size_declared"] = font_metrics[1]
                             record["font_size_vertical_scale"] = font_metrics[2]
-                    objects.append(record)
+                    page_objects.append(record)
+            page_objects_by_page[page_no] = page_objects
+        repeated_footers = identify_repeated_page_footers(
+            by_page, page_sizes, page_objects_by_page
+        )
+        raw[str(year)] = {}
+        for page_no in page_numbers:
+            page = pdf[page_no - 1]
+            page_width, page_height = page_sizes[page_no]
+            items = by_page[page_no]
+            question_markers = sorted(
+                [item for item in items if QUESTION_RE.fullmatch(item.text.strip())],
+                key=lambda item: (-float(item.y), float(item.x)),
+            )
+            footer_items = repeated_footers.get(page_no, [])
+            footer_floor = min(
+                (repeated_footer_floor(item, page_objects_by_page[page_no])
+                 for item in footer_items),
+                default=0.0,
+            )
+            objects = page_objects_by_page[page_no]
             page_id = f"{year}-p{page_no}"
             assign_source_ids(page_id, items, objects)
             raw_items = list(items)
