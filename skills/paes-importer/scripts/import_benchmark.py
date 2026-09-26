@@ -274,6 +274,56 @@ def _latex_token(text: str) -> str:
     return text.replace("·", r"\cdot").replace("−", "-").replace("π", r"\pi").replace("$", r"\$")
 
 
+ARITHMETIC_CHARS_RE = re.compile(r"^[0-9\s.,()+\-\u2212*/:\u00b7]+$")
+
+
+def complete_arithmetic(text, *, signed_number=False):
+    """Recognize numeric syntax without evaluation or ambiguous colon pairs."""
+    if not text or len(text) > 1024 or text.count("(") > 128 or not ARITHMETIC_CHARS_RE.fullmatch(text):
+        return False
+    if re.search(r"(?<![\d.,])(?:[01]?\d|2[0-3])\s*:\s*[0-5]\d(?![\d.,])", text):
+        return False
+    tokens = re.findall(r"\d+(?:[.,]\d+)?|[^\s]", text)
+    position = 0
+    binary = []
+    def atom():
+        nonlocal position
+        if position < len(tokens) and tokens[position] in {"+", "-", "\u2212"}:
+            position += 1
+        if position >= len(tokens):
+            return False
+        token = tokens[position]
+        position += 1
+        if token == "(":
+            if not expression() or position >= len(tokens) or tokens[position] != ")":
+                return False
+            position += 1
+            return True
+        return bool(re.fullmatch(r"\d+(?:[.,]\d+)?", token))
+    def expression():
+        nonlocal position
+        if not atom():
+            return False
+        while position < len(tokens):
+            if tokens[position] == "(":
+                # Juxtaposed parentheses express multiplication; preserve them.
+                binary.append("implicit_multiplication")
+            elif tokens[position] in {"+", "-", "\u2212", "*", "/", ":", "\u00b7"}:
+                binary.append(tokens[position])
+                position += 1
+            else:
+                break
+            if not atom():
+                return False
+        return True
+    if not expression() or position != len(tokens):
+        return False
+    # 20:00 and 2:3 are also times/ratios: syntax alone is not proof of division.
+    if ":" in binary and all(op == ":" for op in binary):
+        return False
+    return bool(binary) or bool(signed_number and re.fullmatch(r"[\-\u2212]\s*\d+(?:[.,]\d+)?", text.strip()))
+
+
 def _is_mathish(text: str) -> bool:
     cleaned = text.strip()
     if not cleaned or cleaned in {"?", ".", ",", "!"} or not MATH_TOKEN_RE.fullmatch(cleaned):
@@ -730,7 +780,7 @@ def detect_math_candidates(items, objects, owner: str | None = None) -> list[dic
         runs = []
         current = []
         for item in sorted(line["items"], key=lambda value: float(value.x)):
-            if id(item) in used_items or not _is_mathish(item.text):
+            if id(item) in used_items or not (_is_mathish(item.text) or (item.text.strip() not in {".", ","} and ARITHMETIC_CHARS_RE.fullmatch(item.text.strip()))):
                 if current:
                     runs.append(current)
                     current = []
@@ -743,6 +793,14 @@ def detect_math_candidates(items, objects, owner: str | None = None) -> list[dic
             runs.append(current)
         for run in runs:
             joined = "".join(item.text.strip() for item in run)
+            numeric_text = " ".join(item.text.strip() for item in run)
+            if ARITHMETIC_CHARS_RE.fullmatch(numeric_text):
+                signed = bool(owner and owner.startswith("option:") and len(items) == len(run))
+                if complete_arithmetic(numeric_text, signed_number=signed):
+                    add_candidate("arithmetic", run, [],
+                                  _latex_token(numeric_text),
+                                  _bbox_union([_item_bbox(item) for item in run]))
+                continue
             has_operator = bool(re.search(r"[+\u2212\-*/\u00b7]", joined))
             signed_option = bool(owner and owner.startswith("option:") and re.fullmatch(r"[\u2212\-]\d+", joined))
             single_equation = len(run) == 1 and "=" in joined and has_operator
