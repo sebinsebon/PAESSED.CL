@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 
 from jsonschema import Draft202012Validator, FormatChecker
 from structural_fidelity import fidelity_report
+from math_syntax import math_syntax_failure
 
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schema" / "draft.v1.schema.json"
@@ -57,6 +58,14 @@ def _references(values: list[str], known: dict, label: str) -> None:
     missing = sorted(set(values) - known.keys())
     if missing:
         raise DraftContractError(f"Unknown {label}: {missing}")
+
+
+def _check_verified_math_syntax(block):
+    if (block['type'] == 'math' and
+            block.get('structural_fidelity', {}).get('status') == 'verified'):
+        failure = math_syntax_failure(block['latex'])
+        if failure:
+            raise DraftContractError(f"Invalid verified math: {failure}")
 
 
 def _expanded_bbox(box: list[float] | tuple[float, ...], *, x_pad: float = 3.0,
@@ -397,6 +406,7 @@ def validate_v1(draft: dict, *, artifact_root: Path | None = None,
         for entry in group:
             _references(entry["region_ids"], regions, "region")
             for block in _blocks(entry["blocks"]):
+                _check_verified_math_syntax(block)
                 _references(block["source_ids"], objects, "source object")
                 _references([block["asset_id"]] if "asset_id" in block else [], assets, "asset")
                 _references([block["evidence_id"]] if block.get("evidence_id") else [], evidence, "evidence")
@@ -457,6 +467,7 @@ def validate_v1(draft: dict, *, artifact_root: Path | None = None,
                 counts[source_id] += 1
                 owners.setdefault(source_id, set()).add(owner)
             for block in _blocks(blocks):
+                _check_verified_math_syntax(block)
                 ambiguous_stem = (owner == "stem" and block["type"] == "unresolved"
                                   and block.get("owner") == "ambiguous")
                 if ambiguous_stem and question["extraction_status"] == "complete":

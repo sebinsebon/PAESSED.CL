@@ -2,6 +2,7 @@
 import re
 import hashlib
 from statistics import median
+from math_syntax import math_syntax_failure
 
 SIGNAL = re.compile(r"[=+\u2212\u00b7\u22c5\u03c0\u221a\u00d7\u00f7^\u00b2\u00b3\u2264\u2265]")
 
@@ -126,6 +127,10 @@ def validate_and_order(blocks, items, objects, evidence_id, source_id):
             group_box = union([group_box] + [obj["bbox_ll"] for _, obj in missing_glyphs])
         if any(r"\begin{cases}" in n["block"].get("latex","") for n in maths):
             reasons.append("system_grouping_requires_evidence")
+        for node in maths:
+            syntax_failure = math_syntax_failure(node['block'].get('latex', ''))
+            if syntax_failure and syntax_failure not in reasons:
+                reasons.append(syntax_failure)
         if reasons:
             block = {"type":"unresolved", "reason":"structural_fidelity_unproven",
                      "evidence_id":evidence_id, "owner":block.get("owner"), "source_ids":refs,
