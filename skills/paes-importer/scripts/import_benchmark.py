@@ -37,7 +37,7 @@ QUESTION_MARKER_LEFT_TOLERANCE = 12.0
 FOOTER_RE = re.compile(r"^[-\u2010-\u2015\u2212]+\s*(\d+)\s*[-\u2010-\u2015\u2212]+$")
 MATHISH_RE = re.compile(r"^[0-9\s\u2212+\-().\u00b7*/]+$")
 
-IMAGE_MARKER_RE = re.compile(r"^\[Image:\s*(Im\d+)\]$")
+IMAGE_MARKER_RE = re.compile(r"^\[Image:\s*([^\[\]\s]+)\]$")
 MATH_TOKEN_RE = re.compile(r"^[A-Za-z0-9\s\u2212+\-().,/%$·π√=?]+$")
 
 
@@ -842,48 +842,81 @@ def detect_table_candidate(items, objects) -> dict | None:
     }
 
 
+def _same_visual_page(marker, obj):
+    """Compare extraction provenance when both source IDs are available."""
+    marker_id = getattr(marker, "source_id", None) or _SOURCE_IDS.get(id(marker))
+    object_id = obj.get("source_id") or _SOURCE_IDS.get(id(obj))
+    if marker_id and object_id:
+        return marker_id.rsplit(":", 2)[0] == object_id.rsplit(":", 2)[0]
+    return True
+
+
 def associate_visual_objects(markers, objects) -> dict[str, list[int]]:
-    """Associate only unambiguous marker/object pairs by bounded geometry."""
-    image_indexes = [index for index, obj in enumerate(objects) if obj.get("type") == "PdfImage"]
-    associations: dict[str, list[int]] = {}
-    unused = set(image_indexes)
-    for marker in sorted(markers, key=lambda item: (-float(item.y), float(item.x))):
-        match = IMAGE_MARKER_RE.fullmatch(marker.text.strip())
-        if not match or not unused:
+    """Resolve unique page-local pairs; never consume an object greedily."""
+    visual_markers = [(marker, IMAGE_MARKER_RE.fullmatch(marker.text.strip()))
+                      for marker in markers]
+    visual_markers = [(marker, match.group(1)) for marker, match in visual_markers if match]
+    proposals = {}
+    for marker, key in visual_markers:
+        if sum(other_key == key for _, other_key in visual_markers) != 1:
             continue
-        marker_box = _item_bbox(marker)
-        marker_center = (
-            (marker_box[0] + marker_box[2]) / 2,
-            (marker_box[1] + marker_box[3]) / 2,
-        )
-        ranked = sorted(
-            unused,
-            key=lambda candidate: (
-                ((objects[candidate]["bbox_ll"][0] + objects[candidate]["bbox_ll"][2]) / 2 - marker_center[0]) ** 2
-                + ((objects[candidate]["bbox_ll"][1] + objects[candidate]["bbox_ll"][3]) / 2 - marker_center[1]) ** 2
-            ),
-        )
-        best = ranked[0]
-        best_box = objects[best]["bbox_ll"]
-        best_distance = (
-            ((best_box[0] + best_box[2]) / 2 - marker_center[0]) ** 2
-            + ((best_box[1] + best_box[3]) / 2 - marker_center[1]) ** 2
-        ) ** 0.5
-        second_distance = float("inf")
-        if len(ranked) > 1:
-            second = objects[ranked[1]]["bbox_ll"]
-            second_distance = (
-                ((second[0] + second[2]) / 2 - marker_center[0]) ** 2
-                + ((second[1] + second[3]) / 2 - marker_center[1]) ** 2
-            ) ** 0.5
-        marker_diagonal = max(1.0, (marker_box[2] - marker_box[0]) + (marker_box[3] - marker_box[1]))
-        if best_distance > marker_diagonal * 2.0:
+        box = _item_bbox(marker)
+        candidates = [i for i, obj in enumerate(objects)
+                      if obj.get("type") == "PdfImage" and _same_visual_page(marker, obj)]
+        # Full image placeholders often carry the exact raster rectangle.
+        exact = [i for i in candidates
+                 if max(abs(a - b) for a, b in zip(box, objects[i]["bbox_ll"])) <= 1.0]
+        if exact:
+            if len(exact) == 1:
+                proposals[key] = exact[0]
             continue
-        if second_distance < float("inf") and second_distance - best_distance < max(12.0, marker_diagonal * 0.25):
+        x, y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        ranked = sorted((math.hypot((objects[i]["bbox_ll"][0] + objects[i]["bbox_ll"][2]) / 2 - x,
+                                   (objects[i]["bbox_ll"][1] + objects[i]["bbox_ll"][3]) / 2 - y), i)
+                        for i in candidates)
+        if not ranked:
             continue
-        associations[match.group(1)] = [best]
-        unused.remove(best)
-    return associations
+        diagonal = max(1.0, box[2] - box[0] + box[3] - box[1])
+        if ranked[0][0] > diagonal * 2.0:
+            continue
+        if len(ranked) > 1 and ranked[1][0] - ranked[0][0] < max(12.0, diagonal * 0.25):
+            continue
+        proposals[key] = ranked[0][1]
+    return {key: [index] for key, index in proposals.items()
+            if list(proposals.values()).count(index) == 1}
+
+
+def aligned_visual_option(box, option_markers):
+    """A tall figure needs a unique adjacent label, not just a nearby center.
+
+    Return None for insufficient evidence. The caller retains its conservative
+    ambiguity handling. Labels in another grid column do not count as neighbors.
+    """
+    x0, y0, x1, y1 = box
+    height = y1 - y0
+    if height <= 0:
+        return None
+    adjacent = []
+    for marker in option_markers:
+        mb = _item_bbox(marker)
+        cy = (mb[1] + mb[3]) / 2
+        gap = x0 - mb[2]
+        if 0 <= gap <= 2 * max(1.0, mb[2] - mb[0]) and y0 <= cy <= y1:
+            adjacent.append(marker)
+    if len(adjacent) != 1:
+        return None
+    marker = adjacent[0]
+    mb = _item_bbox(marker)
+    if abs((mb[1] + mb[3]) / 2 - (y0 + y1) / 2) > height * 0.25:
+        return None
+    # Do not let a wide figure absorb another column's label.
+    for other in option_markers:
+        if other is marker:
+            continue
+        ob = _item_bbox(other)
+        if x0 <= (ob[0] + ob[2]) / 2 <= x1 and y0 <= (ob[1] + ob[3]) / 2 <= y1:
+            return None
+    return OPTION_RE.fullmatch(marker.text.strip()).group(1)
 
 
 def sha256(path: Path) -> str:
@@ -1178,11 +1211,12 @@ def option_for_items(
     visual_assets: dict[str, str],
     option_objects: list[dict] | None = None,
     asset_sources: dict[str, list[str]] | None = None,
+    asset_records: dict[str, dict] | None = None,
 ) -> dict:
     option_items = [item for item in items if item.text.strip() != f"{label})"]
     blocks = reconstruct_generic_blocks(
         option_items, option_objects or [], evidence_id, visual_assets,
-        owner=f"option:{label}", asset_sources=asset_sources,
+        owner=f"option:{label}", asset_sources=asset_sources, asset_records=asset_records,
     )
     marker_ids = [
         _source_id(item, "text")
@@ -1267,7 +1301,11 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
             IMAGE_MARKER_RE.fullmatch(item.text.strip())
             and box[1] <= option_top + 25.0 < box[3]
         ):
-            ambiguous.append(item)
+            label = aligned_visual_option(box, option_markers)
+            if label is None:
+                ambiguous.append(item)
+            else:
+                members[label].append(item)
             continue
         center_y = (box[1] + box[3]) / 2
         if center_y > option_top + 25.0:
@@ -1284,7 +1322,11 @@ def assign_exclusive_option_members(selected_items, selected_objects, option_mar
             obj.get("type") == "PdfImage"
             and box[1] <= option_top + 25.0 < box[3]
         ):
-            ambiguous.append(obj)
+            label = aligned_visual_option(box, option_markers)
+            if label is None:
+                ambiguous.append(obj)
+            else:
+                object_members[label].append(obj)
             continue
         center_y = (box[1] + box[3]) / 2
         if center_y > option_top + 25.0:
@@ -1655,6 +1697,18 @@ def build_visual_assets(
         if not match or match.group(1) in visual_assets:
             continue
         marker_box = _item_bbox(marker)
+        marker_keys = [m.group(1) for value in markers
+                       if (m := IMAGE_MARKER_RE.fullmatch(value.text.strip()))]
+        if marker_keys.count(match.group(1)) != 1:
+            continue
+        # An unresolved raster pairing must not be replaced by nearby vectors.
+        mx, my = (marker_box[0] + marker_box[2]) / 2, (marker_box[1] + marker_box[3]) / 2
+        radius = 2 * max(1.0, marker_box[2] - marker_box[0] + marker_box[3] - marker_box[1])
+        if any(_same_visual_page(marker, obj) and math.hypot(
+                (obj["bbox_ll"][0] + obj["bbox_ll"][2]) / 2 - mx,
+                (obj["bbox_ll"][1] + obj["bbox_ll"][3]) / 2 - my) <= radius
+               for obj in image_objects):
+            continue
         nearby = [
             obj for obj in vector_objects
             if abs((obj["bbox_ll"][1] + obj["bbox_ll"][3]) / 2 - (marker_box[1] + marker_box[3]) / 2) <= 120
@@ -1734,6 +1788,63 @@ def _table_from_candidate(
     return {"type": "table", "rows": rows}
 
 
+def coalesce_visual_crops(blocks, asset_records, evidence_id):
+    """Coalesce representations, never discard original objects or assets.
+
+    A rendered_slice contains the complete page composition inside source_bbox.
+    Containment in the same region therefore proves representation coverage,
+    not that the underlying PDF image streams are identical. Partial overlaps
+    and overlaps of other asset types cannot establish that proof.
+    """
+    images = [i for i, b in enumerate(blocks) if b["type"] == "image"]
+    records = {i: asset_records.get(blocks[i]["asset_id"], {}) for i in images}
+    parents = {}
+    uncertain = set()
+    for index, i in enumerate(images):
+        for j in images[index + 1:]:
+            a, b = records[i], records[j]
+            ab, bb = a.get("source_bbox"), b.get("source_bbox")
+            if not ab or not bb or blocks[i].get("owner") != blocks[j].get("owner"):
+                continue
+            if max(ab[0], bb[0]) >= min(ab[2], bb[2]) or max(ab[1], bb[1]) >= min(ab[3], bb[3]):
+                continue
+            same_region = (len(a.get("region_ids", [])) == 1 and
+                           a.get("region_ids") == b.get("region_ids"))
+            rendered = a.get("source_type") == b.get("source_type") == "rendered_slice"
+            def contains(outer, inner):
+                return outer[0] <= inner[0] and outer[1] <= inner[1] and outer[2] >= inner[2] and outer[3] >= inner[3]
+            if same_region and rendered and (contains(ab, bb) or contains(bb, ab)):
+                parent, child = (i, j) if contains(ab, bb) else (j, i)
+                parents.setdefault(child, set()).add(parent)
+            else:
+                uncertain.update((i, j))
+    # A containment family touching an unproved overlap remains unresolved.
+    changed = True
+    while changed:
+        previous = set(uncertain)
+        for child, candidates in parents.items():
+            if child in uncertain or candidates & uncertain:
+                uncertain.update(candidates | {child})
+        changed = uncertain != previous
+    result = [dict(b) for b in blocks]
+    removed = set()
+    def area(i):
+        box = records[i]["source_bbox"]
+        return (box[2] - box[0]) * (box[3] - box[1])
+    for child in sorted(parents, key=area):
+        if child in uncertain:
+            continue
+        parent = max(parents[child], key=lambda i: (area(i), -i))
+        result[parent]["source_ids"] = list(dict.fromkeys(
+            result[parent].get("source_ids", []) + result[child].get("source_ids", [])))
+        removed.add(child)
+    for i in uncertain:
+        result[i] = _decorate_block({"type": "unresolved", "reason": "visual_overlap_unproven",
+                                    "evidence_id": evidence_id, "candidate_type": "visual"},
+                                   blocks[i].get("source_ids", []), blocks[i].get("owner"))
+    return [block for i, block in enumerate(result) if i not in removed]
+
+
 def reconstruct_generic_blocks(
     items,
     objects,
@@ -1741,6 +1852,7 @@ def reconstruct_generic_blocks(
     visual_assets: dict[str, str],
     owner: str | None = None,
     asset_sources: dict[str, list[str]] | None = None,
+    asset_records: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Reconstruct typed blocks once, retaining positional ownership."""
     asset_sources = asset_sources or {}
@@ -1866,6 +1978,8 @@ def reconstruct_generic_blocks(
     reconstructed = [
         block for _, _, block in sorted(units, key=lambda value: (-value[0], value[1]))
     ]
+    if asset_records:
+        reconstructed = coalesce_visual_crops(reconstructed, asset_records, evidence_id)
     if owner is not None:
         return validate_and_order(reconstructed, items, objects, evidence_id, _source_id)
     return reconstructed
@@ -1878,10 +1992,11 @@ def make_stem_blocks(
     stem_objects: list[dict] | None = None,
     owner: str | None = None,
     asset_sources: dict[str, list[str]] | None = None,
+    asset_records: dict[str, dict] | None = None,
 ) -> list[dict]:
     return reconstruct_generic_blocks(
         stem_items, stem_objects or [], evidence_id, visual_assets,
-        owner=owner, asset_sources=asset_sources,
+        owner=owner, asset_sources=asset_sources, asset_records=asset_records,
     )
 
 
@@ -2338,6 +2453,7 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                         asset["asset_id"]: asset.get("source_ids", [])
                         for asset in generated_assets
                     },
+                    asset_records={asset["asset_id"]: asset for asset in generated_assets},
                 )
                 options = [
                     option_for_items(
@@ -2350,6 +2466,7 @@ def generate_draft(cases_path: Path, output: Path, paths: dict[str, Path]) -> di
                             asset["asset_id"]: asset.get("source_ids", [])
                             for asset in generated_assets
                         },
+                        asset_records={asset["asset_id"]: asset for asset in generated_assets},
                     )
                     for label in sorted(option_members)
                 ]
