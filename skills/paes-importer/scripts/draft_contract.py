@@ -398,7 +398,7 @@ def validate_v1(draft: dict, *, artifact_root: Path | None = None,
             _references(entry["region_ids"], regions, "region")
             for block in _blocks(entry["blocks"]):
                 _references(block["source_ids"], objects, "source object")
-                _references([block["asset_id"]] if block["type"] == "image" else [], assets, "asset")
+                _references([block["asset_id"]] if "asset_id" in block else [], assets, "asset")
                 _references([block["evidence_id"]] if block.get("evidence_id") else [], evidence, "evidence")
 
     for question in questions.values():
@@ -464,7 +464,7 @@ def validate_v1(draft: dict, *, artifact_root: Path | None = None,
                 if block.get("owner", owner) != owner and not ambiguous_stem:
                     raise DraftContractError(f"Block owner differs from container in {question['id']}")
                 _references(block["source_ids"], objects, "source object")
-                _references([block["asset_id"]] if block["type"] == "image" else [], assets, "asset")
+                _references([block["asset_id"]] if "asset_id" in block else [], assets, "asset")
                 _references([block["evidence_id"]] if block.get("evidence_id") else [], evidence, "evidence")
                 _references([block["ai_evidence_id"]] if block.get("ai_evidence_id") else [], evidence, "evidence")
                 if block["type"] == "math" and any(

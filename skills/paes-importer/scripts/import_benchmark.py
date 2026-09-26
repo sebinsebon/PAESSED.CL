@@ -2031,7 +2031,9 @@ def coalesce_visual_crops(blocks, asset_records, evidence_id):
             result[parent].get("source_ids", []) + result[child].get("source_ids", [])))
         removed.add(child)
     for i in uncertain:
+        # A candidate crop remains evidence, not a verified image association.
         result[i] = _decorate_block({"type": "unresolved", "reason": "visual_overlap_unproven",
+                                    "asset_id": blocks[i]["asset_id"],
                                     "evidence_id": evidence_id, "candidate_type": "visual"},
                                    blocks[i].get("source_ids", []), blocks[i].get("owner"))
     return [block for i, block in enumerate(result) if i not in removed]
