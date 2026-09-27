@@ -171,6 +171,22 @@ def validate_and_order(blocks, items, objects, evidence_id, source_id):
         if any(r"\begin{cases}" in n["block"].get("latex","") for n in maths):
             reasons.append("system_grouping_requires_evidence")
         for node in maths:
+            latex = node['block'].get('latex', '')
+            # A bare equality fragment does not prove its relation to a left side.
+            # Explicit environments, alignments and rows keep their existing gate.
+            if (latex.count('=') == 1 and not latex.partition('=')[0].strip()
+                    and not any(marker in latex for marker in
+                                (r'\begin', r'\end', r'\\', '&', '\n', '\r'))
+                    and "expression_relations_unproven" not in reasons):
+                reasons.append("expression_relations_unproven")
+            rhs = latex.partition('=')[2]
+            # Signs and grouping alone do not establish a represented RHS operand.
+            if (latex.count('=') == 1 and ('(' in rhs or ')' in rhs)
+                    and re.fullmatch(r'[\s()+\-\u2212]+', rhs)
+                    and not any(marker in latex for marker in
+                                (r'\begin', r'\end', r'\\', '&', '\n', '\r'))
+                    and "expression_relations_unproven" not in reasons):
+                reasons.append("expression_relations_unproven")
             if legacy_fraction_geometry_unproven(node['block'], im, om):
                 if "legacy_fraction_geometry_unproven" not in reasons:
                     reasons.append("legacy_fraction_geometry_unproven")
