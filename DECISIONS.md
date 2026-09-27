@@ -2,6 +2,52 @@
 
 Este archivo registra decisiones importantes ya tomadas. Las ideas exploratorias deben quedarse en su documento correspondiente o en [[INBOX]] hasta que se conviertan en decision.
 
+## 2026-09-27 - Pipeline PDF a PAESSED Web y primera integracion con AGY
+
+### Decision
+
+Se conserva el pipeline en etapas diferenciadas: importador a `draft.json`,
+verificacion independiente a `verified.json`, enriquecimiento de respuestas
+y explicaciones a `final.json`, y posterior importacion en PAESSED Web.
+
+La skill recibira el PDF y podra recibir un solucionario **opcional**.
+Si se aporta, se exigira asociacion acreditada con el ensayo y las preguntas
+antes de confirmar las respuestas de la pauta. Si no se aporta, se podran
+resolver las preguntas con IA, pero una respuesta no acreditada permanecera
+provisional y no se presentara como correcta confirmada.
+
+La primera implementacion de subagentes de verificacion sera con **AGY CLI**;
+la compatibilidad con otros CLI se abordara despues. El experimento inicial
+usara lotes de **5 preguntas** con agentes de contexto nuevo, y comparara
+calidad y consumo frente a otros tamanos antes de fijar el valor definitivo.
+
+La salida objetivo de la skill incluira preguntas y alternativas, recursos
+visuales, respuesta validada cuando se disponga de ella y mini explicacion.
+PAESSED Web importara y renderizara este contenido. Se contempla un boton
+**"Preguntar a la IA"** para explicaciones extensas bajo demanda.
+
+Se separan expresamente dos usos: **importar un ensayo personal** no lo
+incorpora al banco publico; **publicar en el banco** exigira fidelidad,
+revision educativa y autorizacion de derechos para la version exacta.
+
+### Alcance y pendientes
+
+El diseño completo, las decisiones funcionales y sus limites estan en
+[[technical/PIPELINE_END_TO_END]]. Estas decisiones NO implican que la
+orquestacion AGY, Etapas 2 y 3, el esquema final, el importador web o la
+barrera de publicacion ya esten implementados.
+
+Quedan por definir: validacion matematica exacta sin solucionario,
+empaquetado/version de `final.json`, compatibilidad con el nombre historico
+`exam.json`, aislamiento de sesiones AGY, reglas finales de coste y tipo
+de chat (integrado o proveedor externo).
+
+### Estado
+
+Vision funcional aceptada; detalles tecnicos pendientes de experimentacion.
+
+
+
 ## 2026-09-16 - Separar importacion y verificacion de ensayos
 
 ### Decision
