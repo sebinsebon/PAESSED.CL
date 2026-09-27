@@ -33,7 +33,7 @@ revision educativa y autorizacion de derechos para la version exacta.
 ### Alcance y pendientes
 
 El diseño completo, las decisiones funcionales y sus limites estan en
-[[technical/PIPELINE_END_TO_END]]. Estas decisiones NO implican que la
+[[technical/ARQUITECTURA]]. Estas decisiones NO implican que la
 orquestacion AGY, Etapas 2 y 3, el esquema final, el importador web o la
 barrera de publicacion ya esten implementados.
 
