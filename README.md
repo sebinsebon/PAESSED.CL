@@ -31,7 +31,7 @@ necesita reforzar y que actividad conviene hacer despues.
 - `Aprender`: ruta guiada y adaptable por eje, tema, habilidad y leccion.
 - `Playground`: practica libre filtrable para que el estudiante elija que ejercitar.
 - `Verificador PAES`: visualizador de ensayos importados desde un archivo estructurado.
-- `PAES Scanner`: herramienta complementaria, local-first, para convertir PDFs permitidos en `exam.json`.
+- `PAES Scanner`: skill local-first; el pipeline actualizado apunta a `final.json` importable por PAESSED Web (el antiguo `exam.json` aun requiere una decision de compatibilidad).
 
 ## Estado Actual
 
@@ -40,6 +40,7 @@ El repositorio contiene principalmente documentacion de producto y arquitectura:
 - [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): vision general y principios.
 - [`ROADMAP.md`](ROADMAP.md): fases y prioridades.
 - [`DECISIONS.md`](DECISIONS.md): decisiones ya aceptadas.
+- [`technical/PIPELINE_END_TO_END.md`](technical/PIPELINE_END_TO_END.md): pipeline acordado PDF -> verificacion AGY -> respuestas/explicaciones -> importacion web, estados reales y pendientes.
 - [`product/`](product/): especificaciones de areas del producto.
 - [`system/`](system/): sistema adaptativo, estadisticas, banco de preguntas y estructura M1.
 - [`technical/`](technical/): arquitectura, contrato JSON y PAES Scanner.
