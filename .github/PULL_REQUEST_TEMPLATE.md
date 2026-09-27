@@ -1,6 +1,6 @@
 ## Resumen
 
-- 
+-
 
 ## Tipo de cambio
 
@@ -13,7 +13,7 @@
 
 ## Checklist
 
-- [ ] Revise `PROJECT_CONTEXT.md`, `ROADMAP.md` y `DECISIONS.md`.
+- [ ] Revise `README.md`, `notas/ROADMAP.md` y `docs/DECISIONS.md`.
 - [ ] No agregue datos personales, secretos ni material privado.
 - [ ] No agregue contenido protegido sin permiso claro.
 - [ ] Documente cualquier decision nueva o cambio de alcance.
@@ -21,4 +21,4 @@
 
 ## Riesgos o dudas
 
-- 
+-

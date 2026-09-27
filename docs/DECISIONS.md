@@ -1,6 +1,11 @@
 # Decisions
 
-Este archivo registra decisiones importantes ya tomadas. Las ideas exploratorias deben quedarse en su documento correspondiente o en [[INBOX]] hasta que se conviertan en decision.
+Registro de acuerdos fechados. Para el estado ejecutable actual, consulta
+[IMPORTADOR.md](IMPORTADOR.md); los seguimientos antiguos no sustituyen ese estado.
+La reorganización documental no modifica las decisiones de producto ni autoriza
+implementar etapas pendientes.
+
+Este archivo registra decisiones importantes ya tomadas. Las ideas exploratorias deben quedarse en su documento correspondiente o en [INBOX](../notas/INBOX.md) hasta que se conviertan en decision.
 
 ## 2026-09-27 - Pipeline PDF a PAESSED Web y primera integracion con AGY
 
@@ -33,7 +38,7 @@ revision educativa y autorizacion de derechos para la version exacta.
 ### Alcance y pendientes
 
 El diseño completo, las decisiones funcionales y sus limites estan en
-[[technical/ARQUITECTURA]]. Estas decisiones NO implican que la
+[Pipeline del importador](IMPORTADOR.md). Estas decisiones NO implican que la
 orquestacion AGY, Etapas 2 y 3, el esquema final, el importador web o la
 barrera de publicacion ya esten implementados.
 
@@ -106,7 +111,7 @@ Una skill real desde el inicio evita construir un prototipo desechable. PDFium c
 
 ### Consecuencia
 
-El benchmark inicial usara ocho preguntas reales de los dos PDFs registrados en [[PROJECT_CONTEXT]]. No se implementaran todavia verificadores, workers, batches ni adaptadores multi-CLI.
+El benchmark inicial usara ocho preguntas reales de los dos PDFs registrados en el [historial de fuentes](historial/IMPORTADOR_2026-09.md#fuentes-y-resultados-registrados-al-23-de-septiembre). No se implementaran todavia verificadores, workers, batches ni adaptadores multi-CLI.
 
 ### Estado
 
@@ -298,7 +303,7 @@ El proyecto es educativo y open source, por lo que debe proteger privacidad, der
 
 ### Consecuencia
 
-Los ejemplos deben ser sinteticos o estar claramente autorizados. Antes de agregar contenido se debe revisar [[docs/DATA_AND_CONTENT_POLICY]].
+Los ejemplos deben ser sinteticos o estar claramente autorizados. Antes de agregar contenido se debe revisar [DATA_AND_CONTENT_POLICY](DATA_AND_CONTENT_POLICY.md).
 
 ### Estado
 
@@ -359,7 +364,7 @@ El procesamiento se realizara localmente y la web importara una representacion e
 Aceptada
 
 ### Crear el logo
-Logo creado en afinity en vector y exportado en png en C:\Users\Administrator\Documents\Paessed.cl
+Logo creado en Affinity como vector y exportado a PNG; el archivo local se conserva fuera del repositorio.
 
 ## 2026-09-16 - Refactor generico del importador Etapa 1
 
@@ -368,7 +373,8 @@ El pipeline de skills/paes-importer/ queda organizado como inventario posicional
 Las barras, numeradores/denominadores, superindices y raices se reconstruyen solo cuando la geometria es demostrable; de lo contrario se conserva un bloque unresolved. Las imagenes y regiones visuales se asocian por posicion respecto del stem y las alternativas. Las tablas se estructuran solo con una rejilla verificable; en caso contrario se usa un fallback visual fiel.
 
 complete exige cobertura estructural satisfactoria. La IA del CLI se reserva para candidatos locales ambiguos y solo transcribe o reconstruye estructura: no resuelve, explica ni clasifica preguntas. run-holdout-v1 y su seleccion permanecen congelados como regresion.
-\n
+
+
 
 ## Decisión: cobertura por objetos y ruta única - 2026-09-16
 
@@ -388,7 +394,7 @@ Resultados historicos (superados por la validacion de fidelidad descrita abajo):
 
 Ademas del consumo unico de objetos, complete requiere validacion de orden inline, tipo y relaciones de expresion. Una fraccion y un exponente consumidos por separado no prueban una expresion correcta. Los candidatos conectados no demostrados quedan como un unresolved atomico con source_ids, candidate_id, propuestas conservadas y solicitud AI-on-demand pendiente. No se llama a IA automaticamente ni se usa confianza del modelo para completar.
 
-La ruta generica incorpora structural_fidelity.py sin ramas por pregunta. Los tests de integracion ejecutan el CLI actual sobre ambos conjuntos; los tests oracle no certifican esta ruta. Resultados de esta validacion inicial: desarrollo 3 complete / 5 partial; regresion 6 complete / 2 partial. La reduccion de complete expone pendientes antes ocultos, no significa que se hayan reconstruido todas las formulas. Ver [[technical/STRUCTURAL_FIDELITY_REVIEW]]. En esta validacion no se ejecuto holdout-v2 ni el ensayo completo.
+La ruta generica incorpora structural_fidelity.py sin ramas por pregunta. Los tests de integracion ejecutan el CLI actual sobre ambos conjuntos; los tests oracle no certifican esta ruta. Resultados de esta validacion inicial: desarrollo 3 complete / 5 partial; regresion 6 complete / 2 partial. La reduccion de complete expone pendientes antes ocultos, no significa que se hayan reconstruido todas las formulas. Ver [STRUCTURAL_FIDELITY_REVIEW](historial/IMPORTADOR_2026-09.md). En esta validacion no se ejecuto holdout-v2 ni el ensayo completo.
 
 ## Decision: aritmetica simple y AI-on-demand - 2026-09-17
 

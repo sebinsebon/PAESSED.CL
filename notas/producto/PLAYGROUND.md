@@ -2,7 +2,7 @@
 
 ## Proposito
 
-Playground es practica libre. A diferencia de [[APRENDER]], aqui el usuario decide que quiere practicar.
+Playground es practica libre. A diferencia de [[producto/APRENDER]], aqui el usuario decide que quiere practicar.
 
 ## Experiencia del usuario
 
@@ -20,7 +20,9 @@ Tambien podria existir una accion como "Sorprendeme" para generar una practica a
 
 ## Funcionamiento actual
 
-Playground se apoya en [[../system/BANCO_PREGUNTAS]] y puede alimentar [[../system/ESTADISTICAS]].
+Playground se apoya en [[sistema/BANCO_PREGUNTAS]] y puede alimentar [[sistema/ESTADISTICAS]].
+
+Playground no forma parte funcional del primer MVP. Puede aparecer en la navegacion con el estado Proximamente, pero no debe bloquear el desarrollo del recorrido guiado, Scanner ni Verificador.
 
 La relacion con el sistema de dominio todavia no esta definida. Una idea inicial es que sus resultados tengan menos peso que un diagnostico o actividades guiadas, pero esto no es una decision cerrada.
 

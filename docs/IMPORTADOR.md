@@ -1,111 +1,121 @@
-# Arquitectura
+# Importador PAESSED: pipeline y estado vigente
 
-## Proposito
+Referencia técnica principal. Reúne la arquitectura y el Scanner; el contrato
+detallado permanece en [DRAFT_V1_CONTRACT.md](DRAFT_V1_CONTRACT.md). La
+[skill ejecutable](../skills/paes-importer/SKILL.md) contiene las instrucciones
+operativas. Planificación de producto: [ROADMAP](../notas/ROADMAP.md).
 
-Documentar la arquitectura de PAESSED. Las secciones historicas describen en detalle la Etapa 1 (PDF a borrador estructurado y trazable). La seccion **Pipeline integral de contenido** al final conserva la vision funcional acordada para Etapas 2 y 3, la importacion en PAESSED Web y la distincion entre ensayos privados y banco publico. Las partes propuestas no se consideran implementadas.
+## Estado actual
 
-## Separacion de etapas
+| Componente | Situación al 2026-09-27 |
+| --- | --- |
+| Etapa 1 y productor `draft.json` v1 | Implementados; extracción y reconstrucción con defectos conocidos |
+| AI-on-demand de Etapa 1 | Solicitud/aplicación y registro implementados; no es un servicio autónomo que resuelva todos los pendientes |
+| Contrato privado de revisión | 37/37 pruebas sintéticas archivadas; sin integración ni aprobación real |
+| AGY2 | Respuesta sintética nueva confirmada manualmente por el usuario; aislamiento y lectura visual aún pendientes de resultado |
+| Orquestación de revisión, resolución y web | Pendientes |
 
-```text
-Etapa 1: PDF -> draft.json + assets/ + evidence/
-Etapa 2: draft.json -> verificacion independiente -> verified.json
-Posteriormente: verified.json -> enriquecimiento -> final.json -> banco
-```
+El código actual está basado en el checkpoint funcional `f5db397`; `7ea6338`
+incorpora las decisiones documentales posteriores. El productor emite v1
+mediante `draft_v1_emitter.py`; ya no es una adaptación futura. Las muestras
+congeladas se seleccionan con `--cases` y `--sources`. No se ha acreditado
+todavía el procesamiento autónomo de un ensayo completo de 65 preguntas.
 
-`draft.json` contiene contenido reconstruido. No contiene respuestas correctas, explicaciones, taxonomia ni dificultad.
+## Etapa 1 implementada
 
-## Flujo de Etapa 1
+1. Identificar las fuentes seleccionadas y calcular su SHA-256.
+2. Extraer texto posicionado con `pdf-inspector`; usar PDFium para objetos,
+   dimensiones, páginas y recortes. OCR es una capacidad selectiva, no una
+   garantía probada para cualquier documento escaneado.
+3. Segmentar las regiones configuradas y sus alternativas; inventariar objetos
+   con IDs, posición y propietario.
+4. Detectar candidatos geométricos y reconstruir bloques de texto, LaTeX,
+   imágenes y tablas. Conservar lo no demostrado como `unresolved`.
+5. Comprobar cobertura, consumidores, propiedad, orden y fidelidad mediante
+   los mecanismos implementados; producir `draft.json`, `assets/` y `evidence/`.
+6. Validar el contrato v1 y los archivos antes de publicar la nueva salida.
 
-1. Registrar PDF, SHA-256, paginas, fuente declarada y versiones de herramientas.
-2. Usar `pdf-inspector` para clasificar paginas, extraer texto con posiciones, detectar layout, identificar codificaciones problematicas y ejecutar OCR selectivo local cuando corresponda.
-3. Normalizar paginas, rotacion y coordenadas: pagina base 1, pagina visible orientada, origen superior izquierdo y puntos PDF. Guardar matriz de transformacion para cada render.
-4. Usar PDFium mediante `pypdfium2` para renderizar paginas y regiones a PNG. Renderiza texto, imagenes y trazos vectoriales; es fuente de crops de figuras y evidencia visual.
-5. Aplicar segmentacion determinista por posiciones, espacios, alineacion, anclas candidatas y continuidad. No fijar dos columnas, cantidad de preguntas ni numero de alternativas.
-6. Pedir ayuda al modelo del CLI solo ante ambiguedad real. Enviar primero bloques y crops; enviar pagina completa solo si falta contexto. Registrar intervencion.
-7. Generar bloques tipados, referencias a regiones y assets. Conservar fragmentos no reconstruibles como `unresolved`.
-8. Validar estructura, referencias, hashes, coordenadas y assets. Marcar `verification_status: not_run`.
+Las fórmulas se guardan en LaTeX sin delimitadores; MathJax o KaTeX son opciones
+para el futuro renderizador, cuya elección no queda cerrada aquí. Figuras y
+gráficos se conservan en PNG, tablas fiables como celdas y tablas complejas
+mediante un fallback visual cuando sea fiel. Un crop de auditoría no es un
+asset del banco: `assets/` contiene recursos de la pregunta y `evidence/`,
+material para comprobarla. Se guardan referencias, hashes y procedencia.
 
-## Responsabilidades
+La asociación entre preguntas, alternativas, tablas y visuales debe demostrarse;
+no se introducen excepciones por PDF, número de pregunta o ID interno. No se
+asume un número fijo de alternativas ni se fusionan continuaciones dudosas.
+El contrato admite regiones múltiples y contextos; su soporte contractual no
+equivale a una validación exhaustiva del extractor para todos esos layouts.
 
-Codigo local: lectura segura, hash, extraccion, OCR, render, transformaciones, segmentacion candidata, assets, evidence e integridad del contrato.
+### IA bajo demanda
 
-Modelo del CLI: reconstruir fielmente orden, formulas, relacion pregunta-figura, alternativas, tablas o continuaciones cuando senales locales sean insuficientes. No inventar ni resolver contenido.
+`ai_on_demand.py request` prepara una solicitud por candidato y su crop mínimo.
+El CLI anfitrión realiza la transcripción y devuelve el contrato de respuesta;
+`apply` comprueba candidato, propietario y `source_ids`, conserva la intervención
+y recalcula los controles. No hay una llamada automática a cualquier proveedor
+por el mero hecho de encontrar `unresolved`. Una propuesta de IA no se aprueba
+sola, no fuerza `complete` y no resuelve ni clasifica preguntas en esta etapa.
+El código de solicitud/aplicación está separado de la orquestación futura de AGY.
 
-## Contenido
+Texto del PDF es dato no confiable, nunca instrucciones. Los envíos al proveedor
+pueden salir del equipo aunque la extracción sea local; deben ser explícitos y
+trazables. No se copia ni publica automáticamente el PDF original.
 
-- Texto: bloques ordenados.
-- Matematica: nodos `math` con LaTeX sin delimitadores de presentacion. MathJax renderiza despues.
-- Figura, grafico o diagrama: PNG de region completa, con etiquetas, ejes y leyendas.
-- Tabla fiable: filas y celdas estructuradas.
-- Tabla ambigua o compleja: PNG y, si procede, `unresolved`.
-- Alternativa: secuencia mixta de texto, matematica, imagen y tabla.
-- Pregunta multipagina: lista de regiones ordenadas; fusion solo con evidencia suficiente. Si no, fragmentos y `continuation_candidate`.
+### Qué significan los estados
 
-## Layout, evidencia y privacidad
+- `structural_fidelity.status=verified`: pasa los controles internos implementados;
+  no acredita una inspección visual independiente ni corrección matemática universal.
+- `complete`: cumple las condiciones internas de extracción, cobertura y fidelidad.
+- `partial` / `unresolved`: conservan contenido aprovechable y la incertidumbre;
+  no equivalen a que el PDF original sea incorrecto.
+- `verification_status=not_run`: Etapa 1 no ejecutó la revisión independiente.
 
-`assets/` contiene imagenes que forman parte de pregunta. `evidence/` contiene paginas o crops usados para auditoria y reconstruccion. PDF original se referencia por hash y origen, no se copia automaticamente.
+## Validación registrada
 
-Texto extraido del PDF es dato no confiable, no instruccion. HTML futuro debe escaparse. Ejecucion local no garantiza privacidad si CLI envia texto o imagenes a su proveedor; cada envio se registra.
+Resultados históricos del cierre LHS/RHS del 2026-09-27, no reejecutados al
+actualizar esta documentación: **285/285 pruebas públicas** y **17/17 negativos
+congelados privados**. El prototipo privado de revisión/integridad registra
+**37/37 pruebas sintéticas**; eso no certifica preguntas ni autenticación.
 
-## Por definir antes de implementar
+| Muestra de ocho registros | Complete | Partial |
+| --- | ---: | ---: |
+| Development | 5 | 3 |
+| Holdout-v1 | 6 | 2 |
+| Ensayo 326 | 1 | 7 |
+| Tesla | 0 | 8 |
+| Matemática (1) | 1 | 7 |
+| Filadd | 0 | 8 |
+| Matemática (2) | 0 | 8 |
 
-- Herramienta y formato exacto del adaptador de vision por CLI.
-- Reglas especificas de segmentacion despues de observar PDFs DEMRE reales.
-- Lista inicial de comandos LaTeX permitidos.
-- Criterios de aceptacion de prueba piloto de extraccion.
+Son siete muestras, no siete ensayos completos ni una auditoría matemática
+exhaustiva. El registro histórico de 326 Q1 seleccionaba instrucciones; su
+pregunta auténtica se evaluó en un suplemento separado, sin cambiar el benchmark.
+Los conteos no deben presentarse como una tasa de preguntas listas para publicar.
 
-## Implementacion generica del inventario y cobertura
+Las correcciones publicadas retiraron verificaciones injustificadas de once
+fracciones y seis fragmentos de ecuación; conservaron candidatos y evidencia,
+no reconstruyeron todas las expresiones. Siguen documentados radicales omitidos,
+mezclas de expresiones y errores de atribución. La investigación geométrica del
+caso mezclado se cerró por insuficiencia de metadatos: no reabrirla por defecto.
 
-La implementacion de Etapa 1 debe mantener separadas estas capas:
+Fuentes privadas, fuera del repositorio: cierres `legacy-fractions-closure-20260926T235704`,
+`lhs-rhs-closure-20260927T142737Z` y prototipo
+`verified-integrity-prototype-20260927T185201Z`, bajo `Ensayos/ejecuciones/`.
+Los informes antiguos públicos están en [historial](historial/IMPORTADOR_2026-09.md).
 
-1. Inventario posicional: todos los items de texto, objetos PdfImage y objetos vectoriales con bbox.
-2. Detectores genericos: candidatos de fraccion, superindice, raiz, tabla y region visual.
-3. Reconstruccion tipada: text, math, table, image o unresolved, preservando el orden espacial.
-4. Cobertura: cada candidato relevante debe quedar representado o explicitamente unresolved; no se permite degradarlo silenciosamente a text.
-5. Draft y validacion: estados, referencias, hashes y schema.
+## Próximo paso acotado
 
-Las decisiones se basan en geometria y evidencia, no en numeros de pregunta ni claves internas del PDF. Un fallback visual fiel puede completar el contenido y debe conservar la incidencia no bloqueante correspondiente. La IA del CLI solo entra ante ambiguedad residual y no participa en completitud, resolucion ni clasificacion.
-\n
-
-## Refactorización genérica de cobertura - 2026-09-16
-
-La ruta evaluada asigna identificadores deterministas a los objetos de texto y PDF (page:text:index y page:object:index). source_objects conserva región, propietario (stem, option:A... o cell:*), tipo de candidato y bbox. Los bloques tipados incluyen source_ids; las opciones conservan la referencia de su etiqueta.
-
-La cobertura se valida por referencias de objetos, no por coincidencia de cadenas LaTeX. Un objeto sin consumidor genera un bloque unresolved y deja la pregunta en partial; un objeto consumido más de una vez genera incidencia bloqueante. La validación recorre también bloques anidados de tablas.
-
-La detección genérica actual reconoce fracciones y raíces mediante relaciones geométricas, exponentes por desplazamiento tipográfico, ecuaciones en una línea, cuadrículas vectoriales normalizadas y asociaciones visuales solo cuando son espaciales y no ambiguas. Los reconstructores antiguos permanecen únicamente como oracle de comparación: la ejecución del importador usa una sola ruta genérica y no omite coverage.
-
-El benchmark de desarrollo genérico queda en 5 complete y 3 partial (P9, P16, P38); run-holdout-regression-v3 queda en 7 complete y 1 partial (P35). Las parciales conservan evidencia y objetos pendientes. No se procesa holdout-v2 ni el ensayo completo hasta resolver la reconstrucción vectorial restante y revisar la fidelidad matemática de los outputs.
-
-## Refactorizacion generica y cobertura por objetos - 2026-09-16
-
-La ruta evaluada de Etapa 1 es unica: inventario posicional, detectores genericos por geometria, reconstructores tipados, cobertura y draft.json. Cada objeto relevante recibe un id estable y conserva owner, candidate_type, representation y consumers. Los bloques y celdas referencian source_ids; la cobertura rechaza objetos sin consumidor, consumo duplicado o propietario incorrecto. Un candidato detectado que no puede reconstruirse queda unresolved y fuerza partial.
-
-Las tablas solo se aceptan cuando la grilla esta demostrada; sus celdas se procesan con la misma ruta generica, de modo que la matematica interna no desaparezca. La asociacion de opciones es exclusiva y una asociacion ambigua no se resuelve por proximidad silenciosa. Los reconstructores historicos de las preguntas de desarrollo quedan solo como oracle de comparacion.
-
-Resultado historico, anterior al control de fidelidad: run-generic-v1 tiene 7 complete y 1 partial (P38); run-holdout-regression-v3 tiene 7 complete y 1 partial (P35). Estos estados no certifican fidelidad semantica y quedan superados por la revision siguiente. Los artefactos originales se conservan.
-
-## Control de fidelidad estructural - 2026-09-16
-
-La ruta generica valida propuestas tipadas antes del estado final: posiciona fracciones por baseline inline, separa texto por objetos de origen y agrupa candidatos matematicos conectados por geometria. No basta ordenar por el borde superior del numerador. Los operadores textuales, exponentes separados, agrupaciones sin transcripcion y sistemas sin evidencia suficiente impiden complete.
-
-Solo se compone un numero mixto cuando entero y fraccion cumplen la relacion geometrica implementada. Otras expresiones conectadas no demostradas se conservan completas como candidatos unresolved, con propuestas y evidencia disponibles para AI-on-demand. Los limites geometricos son heuristicas conservadoras, no una prueba universal de correccion matematica. La deteccion actual puede sobredetectar y todavia requiere auditoria manual.
-
-El control final recorre tablas/celdas y comprueba orden por propietario, tipo de representacion y membresia de source_ids. Las propuestas dentro de candidate_blocks son evidencia, no consumidores adicionales. Los objetos matematicos reciben candidate_id estable a partir de sus source_ids. Los reconstructores oracle siguen fuera de la ruta evaluada.
-
-Resultados y limites actuales: [[technical/STRUCTURAL_FIDELITY_REVIEW]].
-
-## Aritmetica simple y AI-on-demand - 2026-09-17
-
-La deteccion determinista admite un subconjunto deliberadamente pequeno: runs contiguos de tokens numericos y operadores, literales negativos en opciones y ecuaciones inline simples. Los spans textuales que contienen una ecuacion obvia se dividen en subitems con parent_id/source_span, conservando extraction.raw.json con la salida original. No se resuelven valores.
-
-Cada unresolved con bbox genera evidencia crop minima `reason=ai_on_demand`. `ai_on_demand.py request` entrega al CLI anfitrion solo esa ruta, el propietario, IDs de origen y una instruccion por tipo. `apply` exige respuesta estricta, valida asociacion y procedencia, registra la intervencion y vuelve a ejecutar coverage/fidelity/status. El resultado de IA se marca provisionalmente como pendiente de revalidacion; no puede elevar status por si mismo.
-
----
+Ejecutar manualmente las pruebas sintéticas de contexto nuevo y lectura visual
+ya preparadas para AGY2, guardar respuestas y consumo, y revisar sus límites.
+La autenticación ya fue confirmada manualmente; no repetir ese diagnóstico.
+Después, diseñar un piloto pequeño de fidelidad con errores y controles conocidos.
+Todavía no iniciar resolución de preguntas ni declarar Etapa 2 implementada.
 
 ## Pipeline integral de contenido: PDF -> PAESSED Web
 
-Estado: **vision funcional acordada; implementacion parcial** (2026-09-27).
+
+Estado: visión funcional acordada; implementación parcial (2026-09-27).
 
 Esta seccion conserva las decisiones conversadas sobre el pipeline completo y
 separa lo construido de lo propuesto. No redefine el contrato vigente de
@@ -304,16 +314,10 @@ retroactivamente ningun contrato por esta seccion.
   todas vinculadas a la version y evidencia concretas. Cambios o revocaciones
   invalidan la admision. Esta barrera aun NO esta implementada.
 
-### 6. Estado y decisiones por cerrar
+### 6. Decisiones por cerrar
 
-| Componente | Estado |
-| --- | --- |
-| Etapa 1, draft v1, assets, evidence, IA bajo demanda | Implementado; limites de fidelidad conocidos |
-| Prototipo privado del contrato de Etapa 2 | Reportado: 37/37 pruebas sinteticas, sin integracion |
-| Orquestacion de subagentes en AGY y revision visual | Por implementar |
-| Agentes de resolucion, pauta opcional y mini explicaciones | Por implementar |
-| `final.json` formal, paquete de imagenes, importador web y chat | Por definir/implementar |
-| Barrera de admision al banco publico | Propuesta; no implementada |
+El estado implementado está resumido al principio de esta guía. La visión
+anterior no acredita componentes adicionales.
 
 **Pendientes de diseño/prueba:** elegir mecanismo de sesiones aisladas de
 AGY; cantidad de lotes en paralelo; politica concreta de escalamiento y
@@ -321,6 +325,7 @@ control de tokens; validacion matematica sin solucionario; esquema versionado
 de `final.json` y empaquetado de imagenes; `exam.json` heredado; modalidad
 del chat; permisos de contenido; autenticacion/aprobaciones para el banco.
 
-Los documentos `DECISIONS.md` y `technical/PAES_SCANNER.md` conservan el
-historial de decisiones y el diseño original del Scanner. Esta seccion
-aclara el objetivo actual sin afirmar que sus piezas pendientes ya funcionen.
+El registro de [decisiones](DECISIONS.md) conserva los acuerdos. El
+[historial técnico](historial/IMPORTADOR_2026-09.md) conserva las evaluaciones
+anteriores. Esta guía reúne Arquitectura y Scanner sin convertir propuestas
+en funcionalidades implementadas.

@@ -31,14 +31,18 @@ Si demuestra debilidad, el sistema puede reforzar contenido, bajar dificultad, m
 
 Aprender depende de:
 
-- [[../system/ESTRUCTURA_M1]]
-- [[../system/SISTEMA_ADAPTATIVO]]
-- [[../system/BANCO_PREGUNTAS]]
-- [[../system/ESTADISTICAS]]
+- [[sistema/ESTRUCTURA_M1]]
+- [[sistema/SISTEMA_ADAPTATIVO]]
+- [[sistema/BANCO_PREGUNTAS]]
+- [[sistema/ESTADISTICAS]]
 
 El objetivo no es tener solo un nivel global, sino un perfil de dominio por eje, tema y habilidad.
 
 La practica diaria deberia usar ese perfil para escoger pocas preguntas centradas especialmente en debilidades.
+
+Aprender sera la experiencia tipo Duolingo del producto: ruta guiada, practica diaria, progreso y desbloqueos. Cada actividad confirmada agregara evidencia al perfil por eje y habilidad para mejorar gradualmente las estadisticas y recomendaciones.
+
+Esta experiencia no es el futuro modo Ranking. Ranking sera una expansion independiente y no debe condicionar el diseno inicial de Aprender.
 
 ## Preguntas abiertas
 
@@ -54,9 +58,9 @@ La practica diaria deberia usar ese perfil para escoger pocas preguntas centrada
 
 ## Pendientes
 
-- [ ] Definir taxonomia M1.
+- [x] Definir taxonomía inicial M1; validar su aplicación con contenido revisado.
 - [ ] Definir modelo de dominio por habilidad.
-- [ ] Definir diagnostico inicial.
+- [ ] Seleccionar y validar las preguntas del diagnóstico inicial ya acordado.
 - [ ] Definir reglas de salto de contenido.
 - [ ] Definir reglas de dificultad dinamica.
 - [ ] Definir practica diaria.

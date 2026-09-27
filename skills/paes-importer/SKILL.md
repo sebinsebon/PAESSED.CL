@@ -107,3 +107,10 @@ An AI result never supplies `complete`; an ambiguous or unverified result stays
 ## Positional extraction
 
 pdf-inspector is the authoritative text/layout extractor for this skill. It provides positioned text items with x/y/width/height in PDF points. pypdfium2 is used for page dimensions, object bounds, and PNG rendering only; pypdf is not part of the benchmark pipeline.
+
+
+## Documentation
+
+- [Current pipeline and scope](../../docs/IMPORTADOR.md).
+- [Implemented draft v1 contract](../../docs/DRAFT_V1_CONTRACT.md).
+- Product planning and Obsidian notes live under `notas/`; executable scripts and schemas stay here.

@@ -36,7 +36,9 @@ antes de incluir preguntas, imagenes o explicaciones derivadas se debe revisar:
 - Licencia aplicable.
 - Forma correcta de atribucion.
 
-Si no hay claridad, no se agrega al repositorio.
+Si no hay claridad, no se agrega al repositorio ni se sirve desde la aplicacion publica. Excluir un archivo de GitHub no concede permiso para redistribuirlo desde una base de datos o servidor privado.
+
+El Analizador de Ensayos puede producir borradores locales para revision, pero una pregunta solo puede promocionarse al banco publico cuando exista permiso verificable para el uso concreto. La publicacion oficial de un PDF no se tratara automaticamente como una licencia open source.
 
 ## Ensayos Privados
 
@@ -44,7 +46,7 @@ Los ensayos externos o privados deben tratarse con enfoque local-first.
 
 El repositorio puede contener:
 
-- El contrato `exam.json`.
+- Los contratos propios del pipeline (`draft.json` v1 y los futuros contratos de revisión y salida final), sin incluir contenido privado. `exam.import.json` es un nombre histórico pendiente de compatibilidad.
 - Ejemplos sinteticos.
 - Herramientas de procesamiento.
 

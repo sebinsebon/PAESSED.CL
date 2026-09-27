@@ -20,9 +20,11 @@ Organizar las metricas que podrian mostrarse al estudiante y las que podrian usa
 
 ## Uso en producto
 
-Las estadisticas podrian aparecer en [[../product/INICIO]], [[../product/PLAYGROUND]] y [[../product/VERIFICADOR_PAES]].
+Las estadisticas podrian aparecer en [[producto/INICIO]], [[producto/PLAYGROUND]] y [[producto/VERIFICADOR_PAES]].
 
-No todas las metricas deben mostrarse al usuario. Algunas pueden ser internas para [[SISTEMA_ADAPTATIVO]].
+No todas las metricas deben mostrarse al usuario. Algunas pueden ser internas para [[sistema/SISTEMA_ADAPTATIVO]].
+
+Los porcentajes se calcularan por eje y habilidad. Deben evolucionar a medida que el estudiante complete practica guiada, el ensayo PAES completo o ensayos externos confirmados. La interfaz debe indicar cuando la evidencia sea escasa y evitar presentar el porcentaje como una medicion exacta.
 
 ## Puntaje estimado
 

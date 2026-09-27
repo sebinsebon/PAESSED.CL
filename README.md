@@ -1,90 +1,59 @@
 # PAESSED
 
-PAESSED es una plataforma abierta de preparacion para PAES Matematica M1.
-El objetivo es ayudar a estudiantes a detectar fortalezas y debilidades,
-practicar con foco y avanzar por una ruta de aprendizaje adaptativa.
+PAESSED es una plataforma abierta de preparación para PAES Matemática M1:
+diagnóstico, perfil de dominio, práctica guiada y adaptación del aprendizaje.
+El MVP acordado será gratuito y sin publicidad. La aplicación web está pendiente;
+la parte ejecutable actual es el importador local de contenido.
 
-El proyecto esta en fase temprana de definicion y diseno. La prioridad actual
-es construir buenas bases de producto, contenido, datos y colaboracion antes de
-implementar grandes partes del sistema.
+## Dónde está cada cosa
 
-## Vision
+| Carpeta o archivo | Función |
+| --- | --- |
+| [docs/IMPORTADOR.md](docs/IMPORTADOR.md) | Guía vigente del pipeline, estado, límites y siguiente paso |
+| [docs/DRAFT_V1_CONTRACT.md](docs/DRAFT_V1_CONTRACT.md) | Contrato técnico de `draft.json` v1 |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Decisiones aceptadas y su historial |
+| [skills/paes-importer/](skills/paes-importer/) | Skill, scripts y esquemas ejecutables de Etapa 1 |
+| [tests/](tests/) y [tools/](tools/) | Regresiones y herramientas locales |
+| [notas/!HOME.md](notas/!HOME.md) | Vault de Obsidian: planificación, producto, ideas y diseño |
+| [notas/ROADMAP.md](notas/ROADMAP.md) | Prioridades del proyecto y pendientes del MVP |
+| [docs/historial/](docs/historial/) | Informes históricos; no describen el estado actual |
 
-La idea central del producto es:
+Abre **`PAESSED.CL/notas` como vault de Obsidian**, en lugar de la raíz del
+repositorio. Las notas siguen en el mismo Git; no son privadas por estar en
+esa carpeta. La configuración de Obsidian, adjuntos locales y vistas `.base`
+se mantienen fuera de Git. `Ensayos/`, con PDFs, ejecuciones y prototipos
+privados, permanece como carpeta hermana del repositorio.
+
+## Pipeline de contenido
 
 ```text
-diagnostico
--> perfil de dominio
--> ruta personalizada
--> practica
--> nuevos resultados
--> actualizacion del perfil
--> nueva adaptacion
+PDF obligatorio + solucionario opcional
+  -> Etapa 1: reconstrucción -> draft.json + assets/ + evidence/
+  -> Etapa 2: revisión independiente de fidelidad -> verified.json
+  -> Etapa 3: respuestas y mini explicaciones comprobadas -> final.json
+  -> PAESSED Web: importar y renderizar
 ```
 
-El sistema debe reconocer que habilidades domina el estudiante, que habilidades
-necesita reforzar y que actividad conviene hacer despues.
+Etapa 1 y el productor v1 están implementados con límites conocidos. Etapas 2
+y 3, el contrato final y el importador web siguen pendientes. `verified` dentro
+de un borrador no equivale a una revisión visual independiente. Consulta el
+[estado y las validaciones registradas](docs/IMPORTADOR.md#estado-actual) antes
+de ampliar una ejecución; las muestras no acreditan un ensayo completo.
 
-## Areas del Producto
+Importar un ensayo personal no lo publica en el banco. El banco público
+requerirá aprobaciones de fidelidad, contenido educativo y derechos sobre una
+versión exacta. Esa barrera todavía no está implementada.
 
-- `Inicio`: dashboard personal con progreso, fortalezas, debilidades y siguiente actividad recomendada.
-- `Aprender`: ruta guiada y adaptable por eje, tema, habilidad y leccion.
-- `Playground`: practica libre filtrable para que el estudiante elija que ejercitar.
-- `Verificador PAES`: visualizador de ensayos importados desde un archivo estructurado.
-- `PAES Scanner`: skill local-first; el pipeline actualizado apunta a `final.json` importable por PAESSED Web (el antiguo `exam.json` aun requiere una decision de compatibilidad).
+## Producto y colaboración
 
-## Estado Actual
+Inicio y Aprender forman el recorrido guiado; el Verificador web permitirá
+revisar ensayos importados y resultados del estudiante. Playground y Ranking
+son expansiones posteriores. Las especificaciones están en el
+[índice de notas](notas/!HOME.md).
 
-El repositorio contiene principalmente documentacion de producto y arquitectura:
-
-- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): vision general y principios.
-- [`ROADMAP.md`](ROADMAP.md): fases y prioridades.
-- [`DECISIONS.md`](DECISIONS.md): decisiones ya aceptadas.
-- [`technical/ARQUITECTURA.md`](technical/ARQUITECTURA.md): Etapa 1 y pipeline integral actualizado: AGY, verificacion, solucionario opcional, `final.json` e importacion web.
-- [`product/`](product/): especificaciones de areas del producto.
-- [`system/`](system/): sistema adaptativo, estadisticas, banco de preguntas y estructura M1.
-- [`technical/`](technical/): arquitectura, contrato JSON y PAES Scanner.
-- [`design/`](design/): criterios UI/UX y referencias.
-
-## Principios
-
-- Personalizacion real, no solo progreso cosmetico.
-- Aprendizaje basado en debilidades accionables.
-- Sesiones manejables para estudiantes.
-- Gamificacion que ayude a estudiar y no distraiga.
-- Uso responsable de contenido oficial o autorizado.
-- Procesamiento local-first para contenido privado.
-- Separacion entre reglas deterministas y tareas apropiadas para IA.
-- Cuidado con metricas que puedan dar falsa precision.
-
-## Contenido y Datos
-
-No subas al repositorio:
-
-- PDFs privados de ensayos.
-- Bancos de preguntas sin permiso de uso o redistribucion.
-- Datos personales de estudiantes.
-- Respuestas, historiales, logs o exports reales de usuarios.
-- Secretos, tokens, credenciales o llaves API.
-
-Lee [`docs/DATA_AND_CONTENT_POLICY.md`](docs/DATA_AND_CONTENT_POLICY.md) antes de agregar contenido educativo, datasets o ejemplos.
-
-## Como Contribuir
-
-Las contribuciones son bienvenidas, pero el proyecto aun esta definiendo sus bases.
-Antes de abrir cambios grandes, revisa:
-
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`docs/OPEN_SOURCE_GUARDRAILS.md`](docs/OPEN_SOURCE_GUARDRAILS.md)
-- [`DECISIONS.md`](DECISIONS.md)
-
-Las ideas exploratorias deben vivir primero en `INBOX.md` o en documentos de diseno.
-Las decisiones aceptadas deben quedar registradas en `DECISIONS.md`.
-
-## Licencia
-
-El codigo y la documentacion del repositorio se publican bajo la licencia MIT.
-Revisa [`LICENSE`](LICENSE) para mas detalles.
-
-La licencia del repositorio no entrega permisos sobre materiales de terceros,
-como preguntas oficiales, ensayos privados, PDFs o imagenes externas.
+Lee [CONTRIBUTING.md](CONTRIBUTING.md), las
+[reglas del proyecto](docs/OPEN_SOURCE_GUARDRAILS.md) y la
+[política de contenido](docs/DATA_AND_CONTENT_POLICY.md) antes de contribuir.
+No se deben publicar PDFs privados, preguntas o imágenes sin permiso, datos
+de estudiantes ni credenciales. La licencia [MIT](LICENSE) del código y la
+documentación propia no concede derechos sobre material de terceros.

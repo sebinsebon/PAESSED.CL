@@ -1,7 +1,12 @@
 # Contrato de `draft.json` v1 — Etapa 1
 
-Estado: esquema y validador implementados; el importador todavía produce
-`0.1.0`. Este documento no autoriza convertir ni reemplazar los baselines.
+Estado: esquema, validador y productor v1 implementados.
+`import_benchmark.py` emite `1.0.0` mediante `draft_v1_emitter.py`.
+Los baselines antiguos no se convierten ni reemplazan por este cambio documental.
+
+Referencia general: [Importador](IMPORTADOR.md). Contrato ejecutable:
+[draft.v1.schema.json](../skills/paes-importer/schema/draft.v1.schema.json);
+validación semántica: [draft_contract.py](../skills/paes-importer/scripts/draft_contract.py).
 
 ## Identidad y procedencia
 
@@ -57,8 +62,8 @@ bloques utilizables. El estado global resume los estados de las preguntas.
 
 No hay campo de respuesta correcta, solucionario, explicación, clasificación
 ni dificultad. La existencia de un solucionario no interviene en la validación
-de `complete`. `verification_status` permanece `not_run`: verificar respuestas
-es otra etapa.
+de `complete`. `verification_status` permanece `not_run`: la revisión
+independiente de fidelidad pertenece a Etapa 2 y las respuestas a Etapa 3.
 
 ## Compatibilidad y límites
 
@@ -78,11 +83,31 @@ necesitan más casos reales antes de ampliar el contrato. La respuesta
 AI-on-demand embebida se valida con su esquema actual `1.0`, separado de la
 versión del draft.
 
-## Adaptación futura del productor
+## Productor actual
 
-El importador deberá emitir `sources[]`, asociar cada `page` a su fuente,
-añadir SHA-256 a cada `evidence`, completar `blocks_completion` en todas las
-incidencias y calcular el estado global desde los estados por pregunta. Debe
-emitir los campos de procedencia y fidelidad exigidos sin alterar los drafts
-históricos. La adaptación y su benchmark de regresión serán otro checkpoint;
-la selección del próximo holdout virgen debe fijarse antes de ejecutarlo.
+El productor emite `sources[]`, asocia páginas a sus fuentes, añade hashes a
+las evidencias, completa los campos de incidencias y deriva el estado global.
+Ensambla y valida v1 en un directorio temporal antes de publicar la salida.
+Mantiene los baselines históricos; no es un conversor automático de borradores
+legados. Las selecciones y los manifiestos privados siguen separados del código.
+
+## Representación y revisión
+
+Los enunciados y alternativas son listas ordenadas de bloques mixtos. `math`
+contiene LaTeX sin `$`; `display` distingue fórmulas independientes de inline.
+`image` referencia un asset, mientras que `evidence` conserva material de auditoría.
+Un fallback visual fiel puede ser no bloqueante; contenido faltante, ambiguo o
+mal asociado debe permanecer pendiente. Los objetos no pueden consumirse dos
+veces ni atribuirse a un propietario distinto para aparentar cobertura.
+
+Los `candidate_blocks` conservan propuestas, no contenido final adicional.
+Las relaciones no demostradas pueden envolverse como `unresolved`, preservando
+IDs, texto o LaTeX, propietario, motivos y evidencia. `verified` significa que
+pasan los controles internos implementados: no prueba fidelidad visual universal.
+
+El contrato de [respuesta AI-on-demand](../skills/paes-importer/schema/ai-response.schema.json)
+permanece separado. Exige candidato, acción, agente y resultado tipado, sin
+respuestas educativas ni confianza usada como aprobación. El aplicador verifica
+procedencia y propietario exactos, conserva la respuesta y recalcula los estados.
+Ni una respuesta de IA ni la existencia de este esquema autorizan una pregunta
+para el banco público. `verified.json` y `final.json` pertenecen a otros alcances.

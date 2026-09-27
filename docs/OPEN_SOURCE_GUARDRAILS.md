@@ -4,10 +4,10 @@ Estas reglas ayudan a mantener PAESSED ordenado, seguro y facil de revisar.
 
 ## Decisiones
 
-- Las ideas exploratorias van en `INBOX.md` o en documentos especificos.
-- Las decisiones aceptadas van en `DECISIONS.md`.
-- No trates una propuesta tecnica como decision si no aparece en `DECISIONS.md`.
-- Cambios de vision principal deben actualizar `PROJECT_CONTEXT.md`.
+- Las ideas exploratorias van en [notas/INBOX.md](../notas/INBOX.md) o en documentos especificos.
+- Las decisiones aceptadas van en [DECISIONS.md](DECISIONS.md).
+- No trates una propuesta tecnica como decision si no aparece en [DECISIONS.md](DECISIONS.md).
+- Cambios de vision principal deben actualizar [README.md](../README.md) y el [índice de notas](../notas/!HOME.md).
 
 ## Alcance
 
