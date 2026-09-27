@@ -2,6 +2,8 @@
 
 ESTADO: arquitectura propuesta / todavia no implementada.
 
+**NOTA (2026-09-27):** Este documento conserva el concepto original del Scanner. El pipeline actualizado esta en [[PIPELINE_END_TO_END]]: separa la verificacion de fidelidad de la resolucion, comienza la orquestacion con AGY CLI, acepta solucionario opcional y define `final.json` como salida objetivo de la skill. El nombre `exam.json` de este documento es historico y su compatibilidad sigue por definir. Ninguno de estos componentes nuevos se considera ya implementado.
+
 ## Proposito
 
 PAES Scanner es una herramienta complementaria y separada de la web. Su objetivo seria procesar PDFs de ensayos y producir un archivo `exam.json` importable por [[../product/VERIFICADOR_PAES]].
