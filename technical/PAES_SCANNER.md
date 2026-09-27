@@ -2,7 +2,7 @@
 
 ESTADO: arquitectura propuesta / todavia no implementada.
 
-**NOTA (2026-09-27):** Este documento conserva el concepto original del Scanner. El pipeline actualizado esta en [[PIPELINE_END_TO_END]]: separa la verificacion de fidelidad de la resolucion, comienza la orquestacion con AGY CLI, acepta solucionario opcional y define `final.json` como salida objetivo de la skill. El nombre `exam.json` de este documento es historico y su compatibilidad sigue por definir. Ninguno de estos componentes nuevos se considera ya implementado.
+**NOTA (2026-09-27):** Este documento conserva el concepto original del Scanner. El pipeline actualizado esta en [[ARQUITECTURA]]: separa la verificacion de fidelidad de la resolucion, comienza la orquestacion con AGY CLI, acepta solucionario opcional y define `final.json` como salida objetivo de la skill. El nombre `exam.json` de este documento es historico y su compatibilidad sigue por definir. Ninguno de estos componentes nuevos se considera ya implementado.
 
 ## Proposito
 
