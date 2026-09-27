@@ -40,7 +40,7 @@ El repositorio contiene principalmente documentacion de producto y arquitectura:
 - [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): vision general y principios.
 - [`ROADMAP.md`](ROADMAP.md): fases y prioridades.
 - [`DECISIONS.md`](DECISIONS.md): decisiones ya aceptadas.
-- [`technical/PIPELINE_END_TO_END.md`](technical/PIPELINE_END_TO_END.md): pipeline acordado PDF -> verificacion AGY -> respuestas/explicaciones -> importacion web, estados reales y pendientes.
+- [`technical/ARQUITECTURA.md`](technical/ARQUITECTURA.md): Etapa 1 y pipeline integral actualizado: AGY, verificacion, solucionario opcional, `final.json` e importacion web.
 - [`product/`](product/): especificaciones de areas del producto.
 - [`system/`](system/): sistema adaptativo, estadisticas, banco de preguntas y estructura M1.
 - [`technical/`](technical/): arquitectura, contrato JSON y PAES Scanner.
