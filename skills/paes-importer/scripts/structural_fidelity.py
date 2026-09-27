@@ -13,6 +13,49 @@ def union(boxes):
 def box(item):
     return [float(item.x), float(item.y), float(item.x + item.width), float(item.y + item.height)]
 
+def legacy_fraction_geometry_unproven(block, im, om):
+    """A discovered bar is only a hypothesis; check both complete operands.
+
+    Text em boxes can slightly cross the rule. All tolerances are relative to
+    operand font size, and bar length is compared with the wider whole group,
+    not the narrow denominator. Proven glyph fractions use their own geometry.
+    """
+    if not block.get("latex", "").startswith(r"\frac"):
+        return False
+    refs = block.get("source_ids", [])
+    rules = [om[s] for s in refs if s in om and om[s].get("type") == "PdfObject"
+             and om[s]["bbox_ll"][3] - om[s]["bbox_ll"][1] <= 2.5]
+    if len(rules) != 1:
+        return True
+    rule = rules[0]
+    if rule.get("simple_fraction_proof"):
+        return False
+    members = [im[s] for s in refs if s in im]
+    if not members:
+        return True
+    bar = rule["bbox_ll"]
+    axis = (bar[1] + bar[3]) / 2
+    above = [i for i in members if i.y + i.height / 2 > axis]
+    below = [i for i in members if i.y + i.height / 2 <= axis]
+    if not above or not below:
+        return True
+    upper, lower = [union([box(i) for i in group]) for group in (above, below)]
+    font = max(float(i.font_size) for i in members)
+    if font <= 0:
+        return True
+    center = (bar[0] + bar[2]) / 2
+    for bounds in (upper, lower):
+        width = bounds[2] - bounds[0]
+        overlap = max(0, min(bounds[2], bar[2]) - max(bounds[0], bar[0]))
+        if width <= 0 or overlap < .8 * width:
+            return True
+        if abs((bounds[0] + bounds[2]) / 2 - center) > .5 * font:
+            return True
+    if bar[2] - bar[0] > max(upper[2]-upper[0], lower[2]-lower[0]) + font:
+        return True
+    return not all(-.25 * font <= gap <= font
+                   for gap in (upper[1]-bar[3], bar[1]-lower[3]))
+
 def validate_and_order(blocks, items, objects, evidence_id, source_id):
     """Check type and expression relations; order by inline baseline, then x.
 
@@ -128,6 +171,9 @@ def validate_and_order(blocks, items, objects, evidence_id, source_id):
         if any(r"\begin{cases}" in n["block"].get("latex","") for n in maths):
             reasons.append("system_grouping_requires_evidence")
         for node in maths:
+            if legacy_fraction_geometry_unproven(node['block'], im, om):
+                if "legacy_fraction_geometry_unproven" not in reasons:
+                    reasons.append("legacy_fraction_geometry_unproven")
             syntax_failure = math_syntax_failure(node['block'].get('latex', ''))
             if syntax_failure and syntax_failure not in reasons:
                 reasons.append(syntax_failure)
