@@ -1,5 +1,7 @@
 # Verificador PAES
 
+**NOTA (2026-09-27):** El flujo mas reciente propone importar y renderizar el paquete `final.json` producido por la skill; ver [[../technical/PIPELINE_END_TO_END]]. El nombre `exam.json` usado mas abajo corresponde al concepto anterior y aun necesita una decision de compatibilidad. Importar un ensayo personal no equivale a publicarlo en el banco global; la validacion y el manejo de respuestas provisionales siguen por desarrollar.
+
 ## Proposito
 
 Verificador PAES permite analizar ensayos que el estudiante ya realizo, usando un archivo estructurado importado en la web.
