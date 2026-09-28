@@ -1,59 +1,49 @@
 # PAESSED
 
-PAESSED es una plataforma abierta de preparación para PAES Matemática M1:
-diagnóstico, perfil de dominio, práctica guiada y adaptación del aprendizaje.
-El MVP acordado será gratuito y sin publicidad. La aplicación web está pendiente;
-la parte ejecutable actual es el importador local de contenido.
+PAESSED es un proyecto abierto para apoyar la preparación de la PAES de
+Matemática 1 mediante diagnóstico, práctica guiada y seguimiento del aprendizaje.
 
-## Dónde está cada cosa
+El proyecto está en desarrollo. El repositorio contiene documentación del
+producto y un importador experimental que convierte selecciones de preguntas
+desde PDF en un borrador estructurado. La aplicación web todavía no está
+implementada.
 
-| Carpeta o archivo | Función |
-| --- | --- |
-| [docs/IMPORTADOR.md](docs/IMPORTADOR.md) | Guía vigente del pipeline, estado, límites y siguiente paso |
-| [docs/DRAFT_V1_CONTRACT.md](docs/DRAFT_V1_CONTRACT.md) | Contrato técnico de `draft.json` v1 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Decisiones aceptadas y su historial |
-| [skills/paes-importer/](skills/paes-importer/) | Skill, scripts y esquemas ejecutables de Etapa 1 |
-| [tests/](tests/) y [tools/](tools/) | Regresiones y herramientas locales |
-| [notas/!HOME.md](notas/!HOME.md) | Vault de Obsidian: planificación, producto, ideas y diseño |
-| [notas/ROADMAP.md](notas/ROADMAP.md) | Prioridades del proyecto y pendientes del MVP |
-| [docs/historial/](docs/historial/) | Informes históricos; no describen el estado actual |
+## Importación de ensayos
 
-Abre **`PAESSED.CL/notas` como vault de Obsidian**, en lugar de la raíz del
-repositorio. Las notas siguen en el mismo Git; no son privadas por estar en
-esa carpeta. La configuración de Obsidian, adjuntos locales y vistas `.base`
-se mantienen fuera de Git. `Ensayos/`, con PDFs, ejecuciones y prototipos
-privados, permanece como carpeta hermana del repositorio.
+El trabajo actual se concentra en preparar preguntas con su texto, fórmulas,
+alternativas, imágenes y procedencia. La primera etapa genera `draft.json`,
+`assets/` y `evidence/`. Conserva los casos ambiguos como pendientes de revisión
+en vez de afirmar que su reconstrucción es correcta.
 
-## Pipeline de contenido
+El importador está en desarrollo y sus evaluaciones cubren muestras de preguntas;
+no debe considerarse todavía un conversor validado para cualquier ensayo completo.
+No resuelve las preguntas ni genera claves de respuesta o explicaciones.
 
-```text
-PDF obligatorio + solucionario opcional
-  -> Etapa 1: reconstrucción -> draft.json + assets/ + evidence/
-  -> Etapa 2: revisión independiente de fidelidad -> verified.json
-  -> Etapa 3: respuestas y mini explicaciones comprobadas -> final.json
-  -> PAESSED Web: importar y renderizar
-```
+La visión del proyecto separa tres tareas:
 
-Etapa 1 y el productor v1 están implementados con límites conocidos. Etapas 2
-y 3, el contrato final y el importador web siguen pendientes. `verified` dentro
-de un borrador no equivale a una revisión visual independiente. Consulta el
-[estado y las validaciones registradas](docs/IMPORTADOR.md#estado-actual) antes
-de ampliar una ejecución; las muestras no acreditan un ensayo completo.
+1. Reconstruir el contenido del PDF.
+2. Revisar de forma independiente que el borrador coincida con el documento.
+3. Comprobar las respuestas y preparar explicaciones para la plataforma.
 
-Importar un ensayo personal no lo publica en el banco. El banco público
-requerirá aprobaciones de fidelidad, contenido educativo y derechos sobre una
-versión exacta. Esa barrera todavía no está implementada.
+Solo la primera etapa está implementada. La revisión independiente, la generación
+de respuestas y explicaciones, el paquete final y la importación web siguen en
+desarrollo o planificación.
 
-## Producto y colaboración
+## Documentación
 
-Inicio y Aprender forman el recorrido guiado; el Verificador web permitirá
-revisar ensayos importados y resultados del estudiante. Playground y Ranking
-son expansiones posteriores. Las especificaciones están en el
-[índice de notas](notas/!HOME.md).
+- [Estado y arquitectura del importador](docs/IMPORTADOR.md)
+- [Contrato de `draft.json` v1](docs/DRAFT_V1_CONTRACT.md)
+- [Decisiones del proyecto](docs/DECISIONS.md)
+- [Política de datos y contenido](docs/DATA_AND_CONTENT_POLICY.md)
+- [Cómo contribuir](CONTRIBUTING.md)
 
-Lee [CONTRIBUTING.md](CONTRIBUTING.md), las
-[reglas del proyecto](docs/OPEN_SOURCE_GUARDRAILS.md) y la
-[política de contenido](docs/DATA_AND_CONTENT_POLICY.md) antes de contribuir.
-No se deben publicar PDFs privados, preguntas o imágenes sin permiso, datos
-de estudiantes ni credenciales. La licencia [MIT](LICENSE) del código y la
-documentación propia no concede derechos sobre material de terceros.
+## Colaboración y contenido
+
+Se agradecen correcciones, mejoras a las herramientas, documentación y pruebas
+con ejemplos sintéticos. Consulta la política de datos antes de añadir material
+educativo. No incorpores PDFs privados, preguntas, imágenes o claves de terceros
+sin autorización verificable, ni datos personales de estudiantes.
+
+El código y la documentación propia se distribuyen bajo la licencia [MIT](LICENSE).
+Esta licencia no otorga derechos sobre contenido de terceros usado para evaluar
+el importador.
